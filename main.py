@@ -27,6 +27,13 @@ def getWindow():
     return int(time.time() // 300 * 300)
 
 def main():
+
+    now = datetime.now()
+    secondsPassed = (now.minute % 5) * 60 + now.second
+    while secondsPassed > 10:
+        print("Waiting for new 5m-window...", 300 - secondsPassed)
+        time.sleep(1)
+
     window = getWindow()
     tokens = getTokens(window)
 
