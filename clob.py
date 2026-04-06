@@ -70,7 +70,6 @@ def updateOrder(client, token, limit, investment):
 
     response = client.post_order(signedOrder, OrderType.GTC)
 
-
     print(f"Opened limit order for {size} ({investment} / {limit}) at $ {limit}")
 
     print("Order Response:", response)

@@ -51,10 +51,10 @@ def main():
             investment = getAccountValue(client) * POS_SIZE
         
         filled = [getFilled(client, t) for t in tokens]
-        prices = [getPrice(t) for t in tokens]
+        #prices = [getPrice(t) for t in tokens]
 
         print(time.strftime("\n%H:%M:%S"))
-        print("Prices:", prices)
+        #print("Prices:", prices)
         print("Fills:", filled)
 
         limits = [getLimit(x, filled) for x in range(len(BETS))]
