@@ -82,4 +82,4 @@ def getFilled(client, token):
     if not len(trades):
         return None
 
-    return trades[0]["price"]
+    return float(trades[0]["price"])
