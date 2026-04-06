@@ -63,7 +63,7 @@ def main():
         
         for b in range(len(BETS)):
             if not filled[b]:
-                updateOrder(client, tokens[b], limits[b], investment)
+                updateOrder(client, tokens[b], limits[b], investment / 2)
 
         time.sleep(1)
 

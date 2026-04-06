@@ -8,14 +8,13 @@ import os, requests
 def initClient():
     load_dotenv()
 
-    host = "https://clob.polymarket.com"
-    privateKey = os.getenv("POLYMARKET_KEY")
 
     client = ClobClient(
-        host,
-        key = privateKey,
+        host = "https://clob.polymarket.com",
+        signature_type = 1,
         chain_id = 137,
-        signature_type = 1
+        key = os.getenv("POLYMARKET_KEY"),
+        funder = os.getenv("POLYMARKET_FUNDER"),
     )
 
     apiCreds = client.create_or_derive_api_creds()
@@ -68,9 +67,9 @@ def updateOrder(client, token, limit, investment):
         )
     )
 
-    response = client.post_order(signedOrder, OrderType.GTC)
+    print(f"Opening limit order for {size} ({investment} / {limit}) at $ {limit}")
 
-    print(f"Opened limit order for {size} ({investment} / {limit}) at $ {limit}")
+    response = client.post_order(signedOrder, OrderType.GTC)
 
     print("Order Response:", response)
 
