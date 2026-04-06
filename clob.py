@@ -56,13 +56,18 @@ def updateOrder(client, token, limit, betValue):
         print("Error: desired bet value too little.")
         return
 
+    tickSize = client.get_tick_size(token)
+
     signedOrder = client.create_order(
         OrderArgs(
             token_id = token,
             price = limit,
             size = size,
             side = BUY,
-        )
+        ),
+        options = {
+            "tick_size": tickSize,
+        }
     )
 
     response = client.post_order(signedOrder, OrderType.FOK)

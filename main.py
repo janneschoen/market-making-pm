@@ -38,7 +38,6 @@ def main():
         print(f"\rWaiting for new 5m-window: {300-secondsPassed}s  ", end='', flush=True)
         time.sleep(1)
         secondsPassed = getSecondsPassed()
-    print()
 
     window = getWindow()
     tokens = getTokens(window)
@@ -51,13 +50,13 @@ def main():
         shares = [getTokenBalance(client, tokens[x]) for x in range(len(BETS))]
         current = getWindow()
         if current != window:
-            print("\n=== NEW 5m WINDOW ===")
             filled = [None, None]
             limits = [getLimit(x, filled) for x in range(len(BETS))]
             redeemBets()
             window = current
             tokens = getTokens(window)
             betValue = (getAccountValue(client) * POS_SIZE) / 2
+            print("\n=== NEW 5m WINDOW ===")
             print("-> Bet value: $", betValue)
 
         filled = [getFilled(client, t) for t in tokens]
