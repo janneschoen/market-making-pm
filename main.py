@@ -4,6 +4,7 @@ from clob import initClient, getAccountValue, getTokenBalance, updateOrder, getF
 
 import time, json, requests, websocket
 from py_clob_client.client import ClobClient
+from datetime import datetime
 
 BETS = "UP", "DOWN"
 POS_SIZE = 0.10
@@ -26,13 +27,17 @@ def getTokens(window):
 def getWindow():
     return int(time.time() // 300 * 300)
 
+def getSecondsPassed():
+    now = datetime.now()
+    return (now.minute % 5) * 60 + now.second
+
 def main():
 
-    now = datetime.now()
-    secondsPassed = (now.minute % 5) * 60 + now.second
+    secondsPassed = getSecondsPassed()
     while secondsPassed > 10:
         print("Waiting for new 5m-window...", 300 - secondsPassed)
         time.sleep(1)
+        secondsPassed = getSecondsPassed()
 
     window = getWindow()
     tokens = getTokens(window)
