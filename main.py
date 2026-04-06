@@ -6,8 +6,12 @@ import time, json, requests, websocket
 from py_clob_client.client import ClobClient
 from datetime import datetime
 
+with open("config.json", "r") as file:
+    data = json.load(file)
+
+POS_SIZE = data["positionSize"]
+MAX_ENTRY_DELAY = data["maxEntryDelay"]
 BETS = "UP", "DOWN"
-POS_SIZE = 0.10
 
 client = initClient()
 
@@ -34,7 +38,7 @@ def getSecondsPassed():
 def main():
 
     secondsPassed = getSecondsPassed()
-    while secondsPassed > 10:
+    while secondsPassed > MAX_ENTRY_DELAY:
         print(f"\rWaiting for new 5m-window: {300-secondsPassed}s  ", end='', flush=True)
         time.sleep(1)
         secondsPassed = getSecondsPassed()
