@@ -35,9 +35,10 @@ def main():
 
     secondsPassed = getSecondsPassed()
     while secondsPassed > 10:
-        print("Waiting for new 5m-window...", 300 - secondsPassed)
+        print(f"\rWaiting for new 5m-window: {300-secondsPassed}s  ", end='', flush=True)
         time.sleep(1)
         secondsPassed = getSecondsPassed()
+    print()
 
     window = getWindow()
     tokens = getTokens(window)
