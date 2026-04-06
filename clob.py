@@ -1,5 +1,5 @@
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import BalanceAllowanceParams, AssetType, TradeParams, OrderType, OrderArgs
+from py_clob_client.clob_types import BalanceAllowanceParams, AssetType, TradeParams, OrderType, OrderArgs, OpenOrderParams
 from py_clob_client.order_builder.constants import BUY, SELL
 
 from dotenv import load_dotenv
@@ -45,13 +45,14 @@ def getTokenBalance(client, token):
 
     return shares
 
-def updateOrder(client, token, limit, betValue):
+def updateOrder(client, token, limit, betValue, fillValue):
     
     cancelResponse = client.cancel_market_orders(
         asset_id = token,
     )
 
-    size = betValue / limit
+    size = (betValue - fillValue) / limit
+
     if size < 5:
         print("Error: desired bet value too little.")
         return
@@ -72,13 +73,22 @@ def updateOrder(client, token, limit, betValue):
     response = client.post_order(signedOrder, OrderType.FOK)
 
 
-def getFilled(client, token):
+def getFillPriceAndValue(client, token):
     params = TradeParams()
     if token:
         params.asset_id = token
 
     trades = client.get_trades(params)
-    if not len(trades):
-        return None
 
-    return float(trades[0]["price"])
+    if not len(trades):
+        return (None, 0)
+    
+    fillValue = 0
+    for trade in trades:
+        fPrice = float(trade["price"])
+        fSize = float(trade["size"])
+        fillValue += fPrice * fSize
+    
+    fillPrice = float(trades[0]["price"])
+
+    return (fillPrice, fillValue)

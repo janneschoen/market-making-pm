@@ -1,6 +1,6 @@
 from limits import getLimit
 from redeem import redeemBets
-from clob import initClient, getAccountValue, getTokenBalance, updateOrder, getFilled
+from clob import initClient, getAccountValue, getTokenBalance, updateOrder, getFillPriceAndValue
 
 import time, json, requests, websocket
 from py_clob_client.client import ClobClient
@@ -46,16 +46,16 @@ def main():
     window = getWindow()
     tokens = getTokens(window)
 
-    filled = [getFilled(client, t) for t in tokens]
-    limits = [getLimit(x, filled) for x in range(len(BETS))]
+    fillPrices = [getFillPriceAndValue(client, t)[0] for t in tokens]
+    limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
     betValue = (getAccountValue(client) * POS_SIZE) / 2
 
     while True:
         shares = [getTokenBalance(client, tokens[x]) for x in range(len(BETS))]
         current = getWindow()
         if current != window:
-            filled = [None, None]
-            limits = [getLimit(x, filled) for x in range(len(BETS))]
+            fillPrices = [None for x in BETS]
+            limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
             redeemBets()
             window = current
             tokens = getTokens(window)
@@ -63,19 +63,21 @@ def main():
             print("\n=== NEW 5m WINDOW ===")
             print("-> Bet value: $", betValue)
 
-        filled = [getFilled(client, t) for t in tokens]
+        fillInfos = [getFillPriceAndValue(client, t) for t in tokens]
+        fillPrices = [x[0] for x in fillInfos]
+        fillValues = [x[1] for x in fillInfos]
 
         print(time.strftime("\n%H:%M:%S"))
         print("Shares:", shares)
-        print("Fill prices:", filled)
+        print("Fill prices:", fillPrices)
 
-        limits = [getLimit(x, filled) for x in range(len(BETS))]
+        limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
         for b in range(len(BETS)):
             print(BETS[b], "limit", limits[b])
         
         for b in range(len(BETS)):
-            if not filled[b]:
-                updateOrder(client, tokens[b], limits[b], betValue)
+            if not fillPrices[b]:
+                updateOrder(client, tokens[b], limits[b], betValue, fillValues[b])
 
         time.sleep(1)
 
