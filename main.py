@@ -31,39 +31,35 @@ def main():
     tokens = getTokens(window)
 
     filled = [getFilled(client, t) for t in tokens]
-    print(filled)
-    filled = [None, None]
     limits = [getLimit(x, filled) for x in range(len(BETS))]
-    investment = getAccountValue(client) * POS_SIZE
-    print(investment)
+    betValue = (getAccountValue(client) * POS_SIZE) / 2
 
     while True:
         shares = [getTokenBalance(client, tokens[x]) for x in range(len(BETS))]
-        print("Shares:", shares)
         current = getWindow()
         if current != window:
-            print(f"Profit: {1- sum(filled)}")
+            print("\n=== NEW 5m WINDOW ===")
             filled = [None, None]
             limits = [getLimit(x, filled) for x in range(len(BETS))]
             redeemBets()
             window = current
             tokens = getTokens(window)
-            investment = getAccountValue(client) * POS_SIZE
-        
+            betValue = (getAccountValue(client) * POS_SIZE) / 2
+            print("-> Bet value: $", betValue)
+
         filled = [getFilled(client, t) for t in tokens]
-        #prices = [getPrice(t) for t in tokens]
 
         print(time.strftime("\n%H:%M:%S"))
-        #print("Prices:", prices)
-        print("Fills:", filled)
+        print("Shares:", shares)
+        print("Fill prices:", filled)
 
         limits = [getLimit(x, filled) for x in range(len(BETS))]
         for b in range(len(BETS)):
             print(BETS[b], "limit", limits[b])
         
         for b in range(len(BETS)):
-            if not filled[b]:
-                updateOrder(client, tokens[b], limits[b], investment / 2)
+            if limit[b]:
+                updateOrder(client, tokens[b], limits[b], betValue)
 
         time.sleep(1)
 

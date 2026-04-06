@@ -8,7 +8,6 @@ import os, requests
 def initClient():
     load_dotenv()
 
-
     client = ClobClient(
         host = "https://clob.polymarket.com",
         signature_type = 1,
@@ -46,16 +45,15 @@ def getTokenBalance(client, token):
 
     return shares
 
-def updateOrder(client, token, limit, investment):
+def updateOrder(client, token, limit, betValue):
     
     cancelResponse = client.cancel_market_orders(
         asset_id = token,
     )
-    print("Cancelled old order:", cancelResponse)
 
-    size = investment / limit
+    size = betValue / limit
     if size < 5:
-        print("Error: desired size equals less than 5 shares.")
+        print("Error: desired bet value too little.")
         return
 
     signedOrder = client.create_order(
@@ -67,11 +65,8 @@ def updateOrder(client, token, limit, investment):
         )
     )
 
-    print(f"Opening limit order for {size} ({investment} / {limit}) at $ {limit}")
+    response = client.post_order(signedOrder, OrderType.FOK)
 
-    response = client.post_order(signedOrder, OrderType.GTC)
-
-    print("Order Response:", response)
 
 def getFilled(client, token):
     params = TradeParams()
