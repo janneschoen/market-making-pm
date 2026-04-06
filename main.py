@@ -58,7 +58,7 @@ def main():
             print(BETS[b], "limit", limits[b])
         
         for b in range(len(BETS)):
-            if limit[b]:
+            if not filled[b]:
                 updateOrder(client, tokens[b], limits[b], betValue)
 
         time.sleep(1)
