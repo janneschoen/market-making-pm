@@ -3,7 +3,7 @@ from py_clob_client.clob_types import BalanceAllowanceParams, AssetType, TradePa
 from py_clob_client.order_builder.constants import BUY, SELL
 
 from dotenv import load_dotenv
-import os, requests
+import os, requests, math
 
 def initClient():
     load_dotenv()
@@ -56,18 +56,17 @@ def updateOrder(client, token, limit, betValue):
         print("Error: desired bet value too little.")
         return
 
-    tickSize = client.get_tick_size(token)
+    tickSize = float(client.get_tick_size(token))
+    adjustedSize = math.floor(size / tickSize) * tickSize
+
 
     signedOrder = client.create_order(
         OrderArgs(
             token_id = token,
             price = limit,
-            size = size,
+            size = adjustedSize,
             side = BUY,
-        ),
-        options = {
-            "tick_size": tickSize,
-        }
+        )
     )
 
     response = client.post_order(signedOrder, OrderType.FOK)
