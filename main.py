@@ -35,7 +35,6 @@ def main():
 
     secondsPassed = getSecondsPassed()
     while secondsPassed > MAX_ENTRY_DELAY:
-        print(f"\rWaiting for new 5m-window: {300-secondsPassed}s  ", end='', flush=True)
         time.sleep(1)
         secondsPassed = getSecondsPassed()
 
