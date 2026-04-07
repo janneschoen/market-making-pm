@@ -45,35 +45,25 @@ def getTokenBalance(client, token):
 
     return shares
 
-def updateOrder(client, token, limit, betValue, fillValue):
-    
+def updateOrder(client, token, limit, numBets, numFilled):
+
     cancelResponse = client.cancel_market_orders(
         asset_id = token,
     )
-
-    size = (betValue - fillValue) / limit
-
-    if size < 5:
-        print("Error: desired bet value too little.")
-        return
-
-    tickSize = float(client.get_tick_size(token))
-    adjustedSize = math.floor(size / tickSize) * tickSize
-
 
     signedOrder = client.create_order(
         OrderArgs(
             token_id = token,
             price = limit,
-            size = adjustedSize,
+            size = numBets - numFilled,
             side = BUY,
         )
     )
 
-    response = client.post_order(signedOrder, OrderType.FOK)
+    response = client.post_order(signedOrder, OrderType.GTC)
 
 
-def getFillPriceAndValue(client, token):
+def getFillPrice(client, token):
     params = TradeParams()
     if token:
         params.asset_id = token
@@ -81,14 +71,14 @@ def getFillPriceAndValue(client, token):
     trades = client.get_trades(params)
 
     if not len(trades):
-        return (None, 0)
+        return None
     
-    fillValue = 0
+    weightedFillPrice = 0
     for trade in trades:
-        fPrice = float(trade["price"])
-        fSize = float(trade["size"])
-        fillValue += fPrice * fSize
-    
-    fillPrice = float(trades[0]["price"])
+        numBets = float(trade["size"])
+        fillPrice = float(trade["price"])
+        weightedFillPrice += numBets * fillPrice
 
-    return (fillPrice, fillValue)
+    weightedFillPrice /= len(trades)
+
+    return weightedFillPrice

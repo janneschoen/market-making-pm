@@ -1,6 +1,6 @@
 from limits import getLimit
 from redeem import redeemBets
-from clob import initClient, getAccountValue, getTokenBalance, updateOrder, getFillPriceAndValue
+from clob import initClient, getAccountValue, getTokenBalance, updateOrder, getFillPrice
 
 import time, json, requests, websocket
 from py_clob_client.client import ClobClient
@@ -35,6 +35,15 @@ def getSecondsPassed():
     now = datetime.now()
     return (now.minute % 5) * 60 + now.second
 
+def getNumBets(client):
+    accountValue = getAccountValue(client)
+    numBets = round((accountValue * POS_SIZE) / 0.5 , 2)
+
+    if numBets < 5:
+        print(f"[!] STOPPED: {POS_SIZE} * ${accountValue} does not cover 5 shares.")
+        exit()
+    return numBets
+
 def main():
 
     secondsPassed = getSecondsPassed()
@@ -43,41 +52,32 @@ def main():
         time.sleep(1)
         secondsPassed = getSecondsPassed()
 
-    window = getWindow()
-    tokens = getTokens(window)
-
-    fillPrices = [getFillPriceAndValue(client, t)[0] for t in tokens]
-    limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
-    betValue = (getAccountValue(client) * POS_SIZE) / 2
+    window = 0
 
     while True:
-        shares = [getTokenBalance(client, tokens[x]) for x in range(len(BETS))]
         current = getWindow()
         if current != window:
             fillPrices = [None for x in BETS]
-            limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
             redeemBets()
             window = current
             tokens = getTokens(window)
-            betValue = (getAccountValue(client) * POS_SIZE) / 2
+            numBets = getNumBets(client)
+            
             print("\n=== NEW 5m WINDOW ===")
-            print("-> Bet value: $", betValue)
+            print("-> Num bets: $", numBets)
 
-        fillInfos = [getFillPriceAndValue(client, t) for t in tokens]
-        fillPrices = [x[0] for x in fillInfos]
-        fillValues = [x[1] for x in fillInfos]
+        shares = [getTokenBalance(client, tokens[x]) for x in range(len(BETS))]
+        fillPrices = [getFillPrice(client, t) for t in tokens]
 
         print(time.strftime("\n%H:%M:%S"))
         print("Shares:", shares)
         print("Fill prices:", fillPrices)
-
-        limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
-        for b in range(len(BETS)):
-            print(BETS[b], "limit", limits[b])
         
         for b in range(len(BETS)):
-            if not fillPrices[b]:
-                updateOrder(client, tokens[b], limits[b], betValue, fillValues[b])
+            if shares[b] < numBets:
+                limit = getLimit(b, fillPrices)
+                updateOrder(client, tokens[b], limit, numBets, shares[b])
+                print(BETS[b], "limit:", limit)
 
         time.sleep(1)
 
