@@ -1,9 +1,6 @@
 from limits import getLimit
-from redeem import redeemBets
-from clob import initClient, getAccountValue, getTokenBalance, updateOrder, getFillPriceAndValue
 
-import time, json, requests, websocket
-from py_clob_client.client import ClobClient
+import time, json, requests
 from datetime import datetime
 
 with open("config.json", "r") as file:
@@ -13,7 +10,6 @@ POS_SIZE = data["positionSize"]
 MAX_ENTRY_DELAY = data["maxEntryDelay"]
 BETS = "UP", "DOWN"
 
-client = initClient()
 
 def getPrice(id):
     resp = requests.get(f"https://clob.polymarket.com/price?token_id={id}&side=BUY").json()
@@ -43,41 +39,59 @@ def main():
         time.sleep(1)
         secondsPassed = getSecondsPassed()
 
-    window = getWindow()
-    tokens = getTokens(window)
+    window = None
+    windowNum = 0
 
-    fillPrices = [getFillPriceAndValue(client, t)[0] for t in tokens]
-    limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
-    betValue = (getAccountValue(client) * POS_SIZE) / 2
+    BASE_LIMITS = []
+    for a in range(10, 50, 5):
+        BASE_LIMITS.append(a/100)
+
+    limits = {}
+    fillPrices = {}
+    for base in BASE_LIMITS:
+        fillPrices[base] = [None for x in BETS]
+
+    totalPnl = {}
+    for base in BASE_LIMITS:
+        totalPnl[base] = 0
 
     while True:
-        shares = [getTokenBalance(client, tokens[x]) for x in range(len(BETS))]
         current = getWindow()
         if current != window:
-            fillPrices = [None for x in BETS]
-            limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
-            redeemBets()
+            if windowNum:
+                print(f"WINDOW #{windowNum}")
+                for base in BASE_LIMITS:
+                    filledAt = fillPrices[base]
+                    if filledAt.count(None) == 1:
+                        for bet in range(len(BETS)):
+                            fillPrice = filledAt[bet]
+                            if fillPrice:
+                                if prices[bet] > fillPrice:
+                                    totalPnl[base] += 1.0 - fillPrice
+                                else:
+                                    totalPnl[base] -= fillPrice
+                    elif filledAt.count(None) == 0:
+                        totalPnl[base] += 1.0 - (sum(filledAt))
+
+                    print(f"{base:<4} base | {str(filledAt[0]):<5} + {str(filledAt[1]):<5} | Total PnL: ${totalPnl[base]:<10.4f}")
+
+            windowNum += 1
+
+            for base in BASE_LIMITS:
+                fillPrices[base] = [None for x in BETS]
+
             window = current
             tokens = getTokens(window)
-            betValue = (getAccountValue(client) * POS_SIZE) / 2
-            print("\n=== NEW 5m WINDOW ===")
-            print("-> Bet value: $", betValue)
 
-        fillInfos = [getFillPriceAndValue(client, t) for t in tokens]
-        fillPrices = [x[0] for x in fillInfos]
-        fillValues = [x[1] for x in fillInfos]
+        prices = [getPrice(token) for token in tokens]
 
-        print(time.strftime("\n%H:%M:%S"))
-        print("Shares:", shares)
-        print("Fill prices:", fillPrices)
+        for base in BASE_LIMITS:
+            limits[base] = [getLimit(base, x, fillPrices[base]) for x in range(len(BETS))]
 
-        limits = [getLimit(x, fillPrices) for x in range(len(BETS))]
-        for b in range(len(BETS)):
-            print(BETS[b], "limit", limits[b])
-        
-        for b in range(len(BETS)):
-            if not fillPrices[b]:
-                updateOrder(client, tokens[b], limits[b], betValue, fillValues[b])
+        for base in BASE_LIMITS:
+            for b in range(len(BETS)):
+                if not fillPrices[base][b] and prices[b] <= limits[base][b]:
+                    fillPrices[base][b] = limits[base][b]
 
         time.sleep(1)
 
