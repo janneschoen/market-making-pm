@@ -48,55 +48,12 @@ async def cancelOrders(client, token):
         asset_id = token
     )
 
-<<<<<<< HEAD:clob.py
-    tokenBalance = client.get_balance_allowance(params=params)
-    shares = int(tokenBalance.get("balance", 0)) / 1_000_000
-
-    return shares
-
-def updateOrder(client, token, limit, numBets, numFilled):
-
-    cancelResponse = client.cancel_market_orders(
-        asset_id = token,
-    )
-=======
 
 async def placeOrder(client, token, price, size, side):
->>>>>>> testing:marketAction.py
 
     signedOrder = client.create_order(
         OrderArgs(
             token_id = token,
-<<<<<<< HEAD:clob.py
-            price = limit,
-            size = numBets - numFilled,
-            side = BUY,
-        )
-    )
-
-    response = client.post_order(signedOrder, OrderType.GTC)
-
-
-def getFillPrice(client, token):
-    params = TradeParams()
-    if token:
-        params.asset_id = token
-
-    trades = client.get_trades(params)
-
-    if not len(trades):
-        return None
-    
-    weightedFillPrice = 0
-    for trade in trades:
-        numBets = float(trade["size"])
-        fillPrice = float(trade["price"])
-        weightedFillPrice += numBets * fillPrice
-
-    weightedFillPrice /= len(trades)
-
-    return weightedFillPrice
-=======
             price = price,
             size = size,
             side = side,
@@ -104,4 +61,3 @@ def getFillPrice(client, token):
     )
 
     response = client.post_order(signedOrder, OrderType.GTC)
->>>>>>> testing:marketAction.py

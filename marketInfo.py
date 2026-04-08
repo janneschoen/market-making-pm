@@ -17,7 +17,7 @@ async def getOrderBook(token):
 
     return bids, asks
 
-def getTokens(location):
+def getMarketInfo(location):
     now = datetime.now()
     month = now.strftime("%B").lower()
     day = now.day + 1
@@ -26,13 +26,15 @@ def getTokens(location):
     slug = f"highest-temperature-in-{location.lower()}-on-{month}-{day}-{year}"
     url = f"https://gamma-api.polymarket.com/events/slug/{slug}"
 
-    tokens = []
     markets = requests.get(url).json()["markets"]
 
-    for market in markets:
-        id_string = market["clobTokenIds"]
-        tokenPair = json.loads(id_string)
-        tokens.append(tokenPair)
+    marketInfo = [
+        {
+            "tokenPair": json.loads(market["clobTokenIds"]),
+            "conditionId": market["conditionId"]
+        }
+        for market in markets
+    ]
 
-    return tokens
+    return marketInfo
 
