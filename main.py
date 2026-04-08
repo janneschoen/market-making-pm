@@ -1,98 +1,76 @@
 from limits import getLimit
+from marketInfo import getPrice, getOrderBook, getTokens
+from marketAction import initClient, getTokenBalance, cancelOrders, placeOrder
+import time, json, asyncio
 
-import time, json, requests
-from datetime import datetime
 
 with open("config.json", "r") as file:
     data = json.load(file)
 
-POS_SIZE = data["positionSize"]
-MAX_ENTRY_DELAY = data["maxEntryDelay"]
-BETS = "UP", "DOWN"
+LOCATIONS = data["locations"][:1]
 
+BETS = "YES", "NO"
+NEUTRAL_NUM = data["neutralShareNum"]
+ORDER_SIZE = data["orderSize"]
+REFRESH_RATE = data["refreshRate"]
 
-def getPrice(id):
-    resp = requests.get(f"https://clob.polymarket.com/price?token_id={id}&side=BUY").json()
-    return float(resp["price"])
+SPREAD_FACTOR = data["spreadFactor"]
+MIN_SPREAD = data["minSpread"]
+MAX_SPREAD = data["maxSpread"]
+SKEW_INTENSITY = data["skewIntensity"]
 
-def getTokens(window):
-    slug = f"btc-updown-5m-{window}"
-    resp = requests.get(f"https://gamma-api.polymarket.com/markets?slug={slug}").json()[0]
+print(LOCATIONS)
 
-    ID_string = resp["clobTokenIds"]
-    tokens = [x for x in json.loads(ID_string)]
+client = initClient()
 
-    return tokens[0], tokens[1]
-
-def getWindow():
-    return int(time.time() // 300 * 300)
-
-def getSecondsPassed():
-    now = datetime.now()
-    return (now.minute % 5) * 60 + now.second
-
-def main():
-
-    secondsPassed = getSecondsPassed()
-    while secondsPassed > MAX_ENTRY_DELAY:
-        time.sleep(1)
-        secondsPassed = getSecondsPassed()
-
-    window = None
-    windowNum = 0
-
-    BASE_LIMITS = []
-    for a in range(10, 50, 5):
-        BASE_LIMITS.append(a/100)
-
-    limits = {}
-    fillPrices = {}
-    for base in BASE_LIMITS:
-        fillPrices[base] = [None for x in BETS]
-
-    totalPnl = {}
-    for base in BASE_LIMITS:
-        totalPnl[base] = 0
+async def handleMarket(tokenPair):
 
     while True:
-        current = getWindow()
-        if current != window:
-            if windowNum:
-                print(f"WINDOW #{windowNum}")
-                for base in BASE_LIMITS:
-                    filledAt = fillPrices[base]
-                    if filledAt.count(None) == 1:
-                        for bet in range(len(BETS)):
-                            fillPrice = filledAt[bet]
-                            if fillPrice:
-                                if prices[bet] > fillPrice:
-                                    totalPnl[base] += 1.0 - fillPrice
-                                else:
-                                    totalPnl[base] -= fillPrice
-                    elif filledAt.count(None) == 0:
-                        totalPnl[base] += 1.0 - (sum(filledAt))
 
-                    print(f"{base:<4} base | {str(filledAt[0]):<5} + {str(filledAt[1]):<5} | Total PnL: ${totalPnl[base]:<10.4f}")
+        bids, asks = await getOrderBook(tokenPair[0])
 
-            windowNum += 1
+        bestBid = float(bids[-1]["price"]) if len(bids) else 0.01
+        bestAsk = float(asks[-1]["price"]) if len(asks) else 0.99
+        print("Market Bid/Ask:", bestBid, bestAsk)
 
-            for base in BASE_LIMITS:
-                fillPrices[base] = [None for x in BETS]
+        midPoint = (bestBid + bestAsk) / 2
+        print("Market midpoint:", midPoint)
+        spread = bestAsk - bestBid
+        print("Market spread:", spread)
 
-            window = current
-            tokens = getTokens(window)
+        mySpread = max(MIN_SPREAD, min(MAX_SPREAD, spread * SPREAD_FACTOR))
+        print("Own spread:", mySpread)
+                   
+        await cancelOrders(client, tokenPair[0])
+        inventory = [await getTokenBalance(client, token) for token in tokenPair]
+        exposure = (inventory[0] - inventory[1]) / inventory[1]
 
-        prices = [getPrice(token) for token in tokens]
+        print("Inventory:", inventory)
+        print("Overexposed" if exposure > 0 else "Underexposed")
+        print("Exposure:", exposure)
 
-        for base in BASE_LIMITS:
-            limits[base] = [getLimit(base, x, fillPrices[base]) for x in range(len(BETS))]
+        myMidPoint = midPoint - (exposure * SKEW_INTENSITY)
+        print("My midpoint:", myMidPoint)
 
-        for base in BASE_LIMITS:
-            for b in range(len(BETS)):
-                if not fillPrices[base][b] and prices[b] <= limits[base][b]:
-                    fillPrices[base][b] = limits[base][b]
+        quotes = [
+            round(myMidPoint - mySpread / 2, 4),
+            round(myMidPoint + mySpread / 2, 4)
+        ]
+        print("Unskewed quotes:", round(midPoint - mySpread/2, 4), round(midPoint + mySpread/2, 4))
+        print("Quotes:", quotes)
 
-        time.sleep(1)
+        await asyncio.sleep(REFRESH_RATE)
+
+async def main():
+    tasks = []
+
+    for location in LOCATIONS:
+        tokens = getTokens(location)
+        print(len(tokens), "markets for", location)
+        for tokenPair in tokens:
+            tasks.append(asyncio.create_task(handleMarket(tokenPair)))
+
+    await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
