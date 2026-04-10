@@ -15,8 +15,6 @@ async def doQuotingCycle(client, market):
         midPoint = (bestBid + bestAsk) / 2
         spread = bestAsk - bestBid
 
-        await cancelOrders(client, tokenPair[0])
-
         inventory = await getTokenBalance(client, tokenPair[0])
         toNeutralise = await getTokenBalance(client, tokenPair[1])
         exposure = (inventory - toNeutralise) / toNeutralise
@@ -29,13 +27,14 @@ async def doQuotingCycle(client, market):
             round(myMidPoint - mySpread / 2, 4),
             round(myMidPoint + mySpread / 2, 4)
         ]
+
+        await cancelOrders(client, tokenPair[0])
+        await placeOrder(client, tokenPair[0], quotes[0], ORDER_SIZE, "BUY", False)
+        await placeOrder(client, tokenPair[0], quotes[1], ORDER_SIZE, "SELL", False)
     
         print(f"Inventory: {inventory} vs {toNeutralise} ({round(exposure,2)})")
         print(f"Market quotes: {bestBid, bestAsk} | Spread: {round(spread,4)} | Midpoint: {round(midPoint,4)} ")
         print(f"My Quotes: {quotes} | My Spread: {round(mySpread,4)} | My Midpoint: {round(myMidPoint,4)}")
-
-        await placeOrder(client, tokenPair[0], quotes[0], ORDER_SIZE, "BUY", False)
-        await placeOrder(client, tokenPair[0], quotes[1], ORDER_SIZE, "SELL", False)
 
         await asyncio.sleep(REFRESH_RATE)
         hoursToRes = await getHoursToRes(market)
