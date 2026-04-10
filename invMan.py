@@ -68,5 +68,5 @@ async def merge(relayClient, amount, market):
         "value": "0"
     }
 
-    response = relayClient.execute([merge_tx], f"Merged {amount} shares on market: {market["question"]}")
+    response = relayClient.execute([merge_tx], f"Merged {amount} shares on market: {market['question']}")
     response.wait()
