@@ -18,8 +18,8 @@ async def doQuotingCycle(client, market):
         await cancelOrders(client, tokenPair[0])
 
         inventory = await getTokenBalance(client, tokenPair[0])
-        print("Inventory:", inventory)
-        exposure = (inventory - NEUTRAL_NUM) / NEUTRAL_NUM
+        toNeutralise = await getTokenBalance(client, tokenPair[1])
+        exposure = (inventory - toNeutralise) / toNeutralise
 
         myMidPoint = midPoint - (exposure * SKEW_INTENSITY)
 
@@ -29,8 +29,10 @@ async def doQuotingCycle(client, market):
             round(myMidPoint - mySpread / 2, 4),
             round(myMidPoint + mySpread / 2, 4)
         ]
-        print("MARKET:", bestBid, bestAsk)
-        print("ME:", quotes)
+    
+        print(f"Inventory: {inventory} vs {toNeutralise} ({round(exposure,2)})")
+        print(f"Market quotes: {bestBid, bestAsk} | Spread: {round(spread,4)} | Midpoint: {round(midPoint,4)} ")
+        print(f"My Quotes: {quotes} | My Spread: {round(mySpread,4)} | My Midpoint: {round(myMidPoint,4)}")
 
         await placeOrder(client, tokenPair[0], quotes[0], ORDER_SIZE, "BUY", False)
         await placeOrder(client, tokenPair[0], quotes[1], ORDER_SIZE, "SELL", False)
