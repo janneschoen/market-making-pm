@@ -11,7 +11,7 @@ client = initClient()
 relayClient = initRelayClient()
 
 async def handleMarket(market):
-    errorHeading = f"Error on market: '{market["question"]}'"
+    errorHeading = f"Error on market: '{market['question']}'"
 
     try:
         tokenPair = market["tokenPair"]
@@ -51,7 +51,7 @@ async def handleMarket(market):
         print("Failed neutralising:", e)
         return
     
-    print("Handled market successfully:", market["question"])
+    print("Handled market successfully:", market['question'])
     return
 
 
@@ -87,7 +87,7 @@ async def main():
         volF = round(market["volume"], 2)
         uncF = round(market["uncertainty"], 2)
         hoursToRes = round(await getHoursToRes(market), 2)
-        print(f"- {market["question"]} (vol: {volF}) (unc: {uncF}) (res: {hoursToRes}h)")
+        print(f"- {market['question']} (vol: {volF}) (unc: {uncF}) (res: {hoursToRes}h)")
 
     tasks = []
     for market in tradingMarkets:
