@@ -2,6 +2,7 @@ from config import NEUTRAL_NUM, EXIT_BUFFER, REFRESH_RATE, EXPOSURE_TOL
 from marketAction import getTokenBalance, cancelOrders, placeOrder
 from marketInfo import getOrderBook
 from invMan import merge
+import asyncio
 
 async def neutralise(client, market):
     tokenPair = market["tokenPair"]

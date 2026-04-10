@@ -1,10 +1,12 @@
 from marketInfo import getHoursToRes, getOrderBook
-from marketAction import cancelOrders, placeOrder
-from config import TRADING_WINDOW, NEUTRAL_NUM, SKEW_INTENSITY, BEAT_SPREAD_BY, MAX_SPREAD, MIN_SPREAD, REFRESH_RATE
+from marketAction import cancelOrders, placeOrder, getTokenBalance
+from config import TRADING_WINDOW, NEUTRAL_NUM, SKEW_INTENSITY, BEAT_SPREAD_BY, MAX_SPREAD, MIN_SPREAD, REFRESH_RATE, ORDER_SIZE
+import asyncio
 
 async def doQuotingCycle(client, market):
     tokenPair = market["tokenPair"]
-    while getHoursToRes(market) > TRADING_WINDOW[1]:
+    hoursToRes = await getHoursToRes(market)
+    while hoursToRes > TRADING_WINDOW[1]:
 
         bids, asks = await getOrderBook(tokenPair[0])
         bestBid = float(bids[-1]["price"]) if len(bids) else 0.01
@@ -16,7 +18,7 @@ async def doQuotingCycle(client, market):
         await cancelOrders(client, tokenPair[0])
 
         inventory = await getTokenBalance(client, tokenPair[0])
-        inventory = 40
+        print("Inventory:", inventory)
         exposure = (inventory - NEUTRAL_NUM) / NEUTRAL_NUM
 
         myMidPoint = midPoint - (exposure * SKEW_INTENSITY)
@@ -30,7 +32,8 @@ async def doQuotingCycle(client, market):
         print("MARKET:", bestBid, bestAsk)
         print("ME:", quotes)
 
-        #await placeOrder(client, tokenPair[0], quotes[0], ORDER_SIZE, "BUY", False)
-        #await placeOrder(client, tokenPair[0], quotes[1], ORDER_SIZE, "SELL", False)
+        await placeOrder(client, tokenPair[0], quotes[0], ORDER_SIZE, "BUY", False)
+        await placeOrder(client, tokenPair[0], quotes[1], ORDER_SIZE, "SELL", False)
 
         await asyncio.sleep(REFRESH_RATE)
+        hoursToRes = await getHoursToRes(market)

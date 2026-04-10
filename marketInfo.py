@@ -17,7 +17,7 @@ async def getOrderBook(token):
 
     return bids, asks
 
-def getHoursToRes(market):
+async def getHoursToRes(market):
     now = datetime.now(timezone.utc)
     hoursToRes = (market["resolution"] - now).total_seconds() / 3600
     return hoursToRes

@@ -1,5 +1,5 @@
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+from py_clob_client.clob_types import BalanceAllowanceParams, AssetType, OrderArgs, OrderType
 from dotenv import load_dotenv
 import os
 
