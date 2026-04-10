@@ -48,8 +48,7 @@ async def cancelOrders(client, token):
         asset_id = token
     )
 
-
-async def placeOrder(client, token, price, size, side):
+async def placeOrder(client, token, price, size, side, isExit):
 
     signedOrder = client.create_order(
         OrderArgs(
@@ -60,4 +59,7 @@ async def placeOrder(client, token, price, size, side):
         )
     )
 
-    response = client.post_order(signedOrder, OrderType.GTC)
+    if isExit:
+        response = client.post_order(signedOrder, OrderType.FOK)
+    else:
+        response = client.post_order(signedOrder, OrderType.GTC, post_only=True)

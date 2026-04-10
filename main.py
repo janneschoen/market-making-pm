@@ -1,95 +1,81 @@
-from splitting import createSplit, initRelayClient
-from marketInfo import getPrice, getOrderBook, getMarketInfo
+from invMan import initRelayClient, split, merge
+from quotingCycle import doQuotingCycle
+from exitLoop import neutralise
+from marketInfo import getPrice, getOrderBook, getLocationMarkets, getHoursToRes
 from marketAction import initClient, getTokenBalance, cancelOrders, placeOrder
+from config import LOCATIONS, NEUTRAL_NUM, TRADING_WINDOW, NUM_MARKETS
 import time, json, asyncio
 
-
-with open("config.json", "r") as file:
-    data = json.load(file)
-
-LOCATIONS = data["locations"][:1]
-
-BETS = "YES", "NO"
-NEUTRAL_NUM = data["neutralShareNum"]
-ORDER_SIZE = data["orderSize"]
-REFRESH_RATE = data["refreshRate"]
-
-SPREAD_FACTOR = data["spreadFactor"]
-MIN_SPREAD = data["minSpread"]
-MAX_SPREAD = data["maxSpread"]
-SKEW_INTENSITY = data["skewIntensity"]
-
-print(LOCATIONS)
 
 client = initClient()
 relayClient = initRelayClient()
 
 async def handleMarket(market):
-    tokenPair = market["tokenPair"]
+    errorHeading = f"Error on {market["question"]}"
 
-    for token in tokenPair:
-        await cancelOrders(client, token)
+    try:
+        tokenPair = market["tokenPair"]
+        for token in tokenPair:
+            await cancelOrders(client, token)
+    except Exception as e:
+        print(errorHeading)
+        print("Error:", e)
+        return
 
-    while True:
+    try:
+        await split(relayClient, market)
+    except Exception as e:
+        print(errorHeading)
+        print("Failed splitting:", e)
+        return
+    try:
+        await doQuotingCycle(client, market)
+    except Exception as e:
+        print(errorHeading)
+        print("Failed quoting cycle:", e)
+        return
+    try:
+        await neutralise(relayClient, market)
+    except Exception as e:
+        print(errorHeading)
+        print("Failed neutralising:", e)
+        return
+    
+    print("Handled market successfully:", market["question"])
+    return
 
-        bids, asks = await getOrderBook(tokenPair[0])
-
-        bestBid = float(bids[-1]["price"]) if len(bids) else 0.01
-        bestAsk = float(asks[-1]["price"]) if len(asks) else 0.99
-        print("Market Bid/Ask:", bestBid, bestAsk)
-
-        midPoint = (bestBid + bestAsk) / 2
-        print("Market midpoint:", midPoint)
-        spread = bestAsk - bestBid
-        print("Market spread:", spread)
-
-        mySpread = max(MIN_SPREAD, min(MAX_SPREAD, spread * SPREAD_FACTOR))
-        print("Own spread:", mySpread)
-                   
-        await cancelOrders(client, tokenPair[0])
-
-        inventory = await getTokenBalance(client, tokenPair[0])
-        exposure = (inventory - NEUTRAL_NUM) / NEUTRAL_NUM
-
-        myMidPoint = midPoint - (exposure * SKEW_INTENSITY)
-
-        print(f"Inventory: {inventory} (hedge: {NEUTRAL_NUM})")
-        print("Overexposed" if exposure > 0 else "Underexposed")
-        print("Relative exposure:", exposure)
-        print("My midpoint:", myMidPoint)
-
-        quotes = [
-            round(myMidPoint - mySpread / 2, 4),
-            round(myMidPoint + mySpread / 2, 4)
-        ]
-        print("Unskewed quotes:", round(midPoint - mySpread/2, 4), round(midPoint + mySpread/2, 4))
-        print("Quotes:", quotes)
-
-        await placeOrder(client, token[0], quotes[0], ORDER_SIZE, 0)
-        await placeOrder(client, token[0], quotes[1], ORDER_SIZE, 1)
-
-        await asyncio.sleep(REFRESH_RATE)
 
 async def main():
-    tasks = []
+    allMarkets = []
 
+    dayDelay = 0
     for location in LOCATIONS:
-        marketInfo = getMarketInfo(location)[:1]
+        locMarkets = getLocationMarkets(location, dayDelay)
+        while not (TRADING_WINDOW[0] > getHoursToRes(locMarkets[0]) > TRADING_WINDOW[1]):
+            dayDelay += 1
+            locMarkets = getLocationMarkets(location, dayDelay)
+        
+        for market in locMarkets:
+            allMarkets.append(market)
 
-        print(len(marketInfo), "markets for", location)
+    print(f"Scanned {len(allMarkets)} markets for {len(LOCATIONS)} locations.")
 
-        for market in marketInfo:
-            inventory = [await getTokenBalance(client, token) for token in market["tokenPair"]]
-            if (inventory[0] or inventory[1]) and (inventory[0] != inventory[1]):
-                print(f"{location} market {market["conditionId"]} currently unhedged.")
-                print("Process will not continue until position is neutral.")
-                exit()
-            
-            createSplit(relayClient, market["conditionId"], NEUTRAL_NUM)  
+    for market in allMarkets:
+        if not (TRADING_WINDOW[0] > getHoursToRes(market) > TRADING_WINDOW[1]):
+            allMarkets.remove(market)
+    
+    print(f"{len(allMarkets)} markets matching filter.")
 
-        for market in marketInfo:
-            tasks.append(asyncio.create_task(handleMarket(market)))  
+    sortedMarkets = sorted(allMarkets, key=lambda market: market["volume"] * market["uncertainty"], reverse=True)
 
+    tradingMarkets = sortedMarkets[:NUM_MARKETS]
+    print(f"Retrieved best {len(tradingMarkets)} markets:")
+    for market in tradingMarkets:
+        print("-", market["question"])
+
+    tasks = []
+    for market in tradingMarkets:
+        tasks.append(asyncio.create_task(handleMarket(market)))  
     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
