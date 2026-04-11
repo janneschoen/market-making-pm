@@ -2,7 +2,7 @@ from invMan import initRelayClient, split, merge
 from quotingCycle import doQuotingCycle
 from exitLoop import neutralise
 from marketInfo import getPrice, getOrderBook, getLocationMarkets, getHoursToRes
-from marketAction import initClient, getTokenBalance, cancelOrders, placeOrder
+from marketAction import initClient, placeOrder, isNeutral
 from config import LOCATIONS, NEUTRAL_NUM, TRADING_WINDOW, NUM_MARKETS
 import time, json, asyncio
 
@@ -12,24 +12,17 @@ relayClient = initRelayClient()
 
 async def handleMarket(market):
     errorHeading = f"Error on market: '{market['question']}'"
+    tokenPair = market["tokenPair"]
 
+    print("Checking if neutral...")
     try:
-        tokenPair = market["tokenPair"]
-        for token in tokenPair:
-            await cancelOrders(client, token)
-    except Exception as e:
-        print(errorHeading)
-        print("Error:", e)
-        return
-
-    try:
-        yesTokens = await getTokenBalance(client, tokenPair[0])
-        noTokens = await getTokenBalance(client, tokenPair[1])
-        if yesTokens == noTokens > 0:
-            print("Already neutral:", yesTokens, noTokens)
+        if await isNeutral(client, tokenPair):
+            print("Already neutral.")
         else:
             print("Creating hedged portfolio...")
             await split(relayClient, market)
+            if not await isNeutral(client, tokenPair):
+                raise ValueError("No neutral portfolio after attempted split")
     except Exception as e:
         print(errorHeading)
         print("Failed splitting:", e)

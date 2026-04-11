@@ -1,5 +1,5 @@
 from config import NEUTRAL_NUM, EXIT_BUFFER, REFRESH_RATE, EXPOSURE_TOL
-from marketAction import getTokenBalance, cancelOrders, placeOrder
+from marketAction import getTokenBalance, cancelOrder, placeOrder, getOpenOrders
 from marketInfo import getOrderBook
 from invMan import merge
 import asyncio
@@ -28,7 +28,10 @@ async def neutralise(client, market):
 
         await asyncio.sleep(REFRESH_RATE)
         inventory = await getTokenBalance(client, tokenPair[0])
+    
+    openOrders = await getOpenOrders(client, market)
+    for order in openOrders:
+        await cancelOrder(client, order)
 
-    await cancelOrders(client, tokenPair[0])
     inventory = await getTokenBalance(client, tokenPair[0])
     await merge(relayClient, inventory, market)

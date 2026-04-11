@@ -1,6 +1,6 @@
 from marketInfo import getHoursToRes, getOrderBook
-from marketAction import cancelOrders, placeOrder, getTokenBalance
-from config import TRADING_WINDOW, NEUTRAL_NUM, SKEW_INTENSITY, BEAT_SPREAD_BY, MAX_SPREAD, MIN_SPREAD, REFRESH_RATE, ORDER_SIZE
+from marketAction import cancelOrder, placeOrder, getTokenBalance, getOpenOrders
+from config import *
 import asyncio
 
 async def doQuotingCycle(client, market):
@@ -16,8 +16,10 @@ async def doQuotingCycle(client, market):
         spread = bestAsk - bestBid
 
         inventory = await getTokenBalance(client, tokenPair[0])
-        toNeutralise = await getTokenBalance(client, tokenPair[1])
-        exposure = (inventory - toNeutralise) / toNeutralise
+        neutralShares = await getTokenBalance(client, tokenPair[1])
+        toNeutralise = inventory - neutralShares
+
+        exposure = toNeutralise / neutralShares
 
         myMidPoint = midPoint - (exposure * SKEW_INTENSITY)
 
@@ -28,13 +30,25 @@ async def doQuotingCycle(client, market):
             round(myMidPoint + mySpread / 2, 4)
         ]
 
-        await cancelOrders(client, tokenPair[0])
-        await placeOrder(client, tokenPair[0], quotes[0], ORDER_SIZE, "BUY", False)
-        await placeOrder(client, tokenPair[0], quotes[1], ORDER_SIZE, "SELL", False)
-    
-        print(f"Inventory: {inventory} vs {toNeutralise} ({round(exposure,2)})")
-        print(f"Market quotes: {bestBid, bestAsk} | Spread: {round(spread,4)} | Midpoint: {round(midPoint,4)} ")
-        print(f"My Quotes: {quotes} | My Spread: {round(mySpread,4)} | My Midpoint: {round(myMidPoint,4)}")
+        buySize = ORDER_SIZE - (toNeutralise if exposure < 0 else 0)
+        sellSize = ORDER_SIZE + (toNeutralise if exposure > 0 else 0)
+
+        previousOrders = await getOpenOrders(client, market)
+
+        await placeOrder(client, tokenPair[0], quotes[0], buySize, "BUY", False)
+        await placeOrder(client, tokenPair[0], quotes[1], sellSize, "SELL", False)
+
+        for order in previousOrders:
+            await cancelOrder(client, order)
+
+        print(f"\nInventory: {inventory} / {neutralShares} ({round(exposure,2)})")
+
+        print("──────────────────────────────────────────────────────────────")
+        print(f"{'':<13} {'Bid':>10} {'Ask':>10} {'Spread':>10} {'Midpoint':>12}")
+        print("──────────────────────────────────────────────────────────────")
+        print(f"{'Market':<13} {bestBid:>10.4f} {bestAsk:>10.4f} {spread:>10.4f} {midPoint:>12.4f}")
+        print(f"{'My Quotes':<13} {quotes[0]:>10.4f} {quotes[1]:>10.4f} {mySpread:>10.4f} {myMidPoint:>12.4f}")
+        print("──────────────────────────────────────────────────────────────")
 
         await asyncio.sleep(REFRESH_RATE)
         hoursToRes = await getHoursToRes(market)

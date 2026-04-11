@@ -1,7 +1,8 @@
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import BalanceAllowanceParams, AssetType, OrderArgs, OrderType
+from py_clob_client.clob_types import BalanceAllowanceParams, AssetType, OrderArgs, OrderType, OpenOrderParams
 from dotenv import load_dotenv
 import os
+from config import EXPOSURE_TOL, MIN_ORDER_SIZE, NEUTRAL_NUM
 
 def initClient():
     load_dotenv()
@@ -30,7 +31,15 @@ async def getTokenBalance(client, token):
 
     return shares
 
-def getAccountValue(client):
+async def isNeutral(client, tokenPair):
+    yesTokens = await getTokenBalance(client, tokenPair[0])
+    noTokens = await getTokenBalance(client, tokenPair[1])
+    if abs(yesTokens - noTokens) < EXPOSURE_TOL:
+        if abs(NEUTRAL_NUM - noTokens) < EXPOSURE_TOL:
+            return True
+    return False
+
+async def getAccountValue(client):
     params = BalanceAllowanceParams(
         asset_type=AssetType.COLLATERAL
     )
@@ -43,12 +52,23 @@ def getAccountValue(client):
 
     return cashBalance + positionValue
 
-async def cancelOrders(client, token):
-    response = client.cancel_market_orders(
-        asset_id = token
+async def getOpenOrders(client, market):
+    response = client.get_orders(
+        OpenOrderParams(
+            market = market["conditionId"]
+        )
     )
+    orders = []
+    for order in response:
+        orders.append(order['id'])
+    return orders
+
+async def cancelOrder(client, orderId):
+    response = client.cancel(orderId)
 
 async def placeOrder(client, token, price, size, side, isExit):
+    if size <= MIN_ORDER_SIZE:
+        return
 
     signedOrder = client.create_order(
         OrderArgs(

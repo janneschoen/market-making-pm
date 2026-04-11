@@ -8,6 +8,7 @@ try:
 except Exception as e:
     print(f"Failed to load config from {CONFIG_PATH}: {e}")
 
+MIN_ORDER_SIZE = CONFIG["minOrderSize"]
 
 LOCATIONS = CONFIG["locations"]
 NUM_MARKETS = CONFIG["numMarkets"]
