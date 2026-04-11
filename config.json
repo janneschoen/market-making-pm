@@ -1,10 +1,10 @@
 {
     "minOrderSize": 5,
     "tradingWindow": [36, 12],
-    "numMarkets": 1,
+    "numMarkets": 10,
 
-    "neutralShares": 30,
-    "orderSize": 5,
+    "neutralShares": 100,
+    "orderSize": 20,
 
     "minSpread": 0.014,
     "maxSpread": 0.03,
