@@ -1,0 +1,36 @@
+{
+    "minOrderSize": 5,
+    "tradingWindow": [36, 12],
+    "numMarkets": 1,
+
+    "neutralShares": 30,
+    "orderSize": 5,
+
+    "minSpread": 0.014,
+    "maxSpread": 0.03,
+    "beatSpreadBy": 0.005,
+    "skewIntensity": 0.01,
+
+    "refreshRate": 5,
+
+    "exitBuffer": 0.005,
+    "exposureTol": 5,
+
+    "locations": [
+        "Seoul",
+        "London",
+        "Munich",
+        "Chicago",
+        "Shanghai",
+        "Wellington",
+        "Taipei",
+        "Toronto",
+        "Tokyo",
+        "Hong-Kong",
+        "Paris",
+        "Madrid",
+        "Miami",
+        "Beijing",
+        "NYC"
+    ]
+}
