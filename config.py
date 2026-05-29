@@ -8,19 +8,19 @@ try:
 except Exception as e:
     print(f"Failed to load config from {CONFIG_PATH}: {e}")
 
-MIN_ORDER_SIZE = CONFIG["minOrderSize"]
+YES = 0
+NO = 1
 
 LOCATIONS = CONFIG["locations"]
-NUM_MARKETS = CONFIG["numMarkets"]
-TRADING_WINDOW = CONFIG["tradingWindow"]
+NUM_MARKETS = CONFIG["number_of_markets"]
+TRADING_WINDOW = CONFIG["trading_window"]
 
-NEUTRAL_NUM = CONFIG["neutralShares"]
-REFRESH_RATE = CONFIG["refreshRate"]
-ORDER_SIZE = CONFIG["orderSize"]
-MIN_SPREAD = CONFIG["minSpread"]
-MAX_SPREAD = CONFIG["maxSpread"]
-BEAT_SPREAD_BY = CONFIG["beatSpreadBy"]
-SKEW_INTENSITY = CONFIG["skewIntensity"]
+REFRESH_RATE = CONFIG["refresh_rate"]
 
-EXIT_BUFFER = CONFIG["exitBuffer"]
-EXPOSURE_TOL = CONFIG["exposureTol"]
+MIN_ORDER_SIZE = CONFIG["minimal_order_size"]
+ORDER_SIZE = CONFIG["standard_order_size"]
+
+SPREAD = CONFIG["spread"]
+SKEW_INTENSITY = CONFIG["skew_intensity"]
+
+EXIT_BUFFER = CONFIG["exit_buffer"]

@@ -2,9 +2,9 @@ from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import BalanceAllowanceParams, AssetType, OrderArgs, OrderType, OpenOrderParams
 from dotenv import load_dotenv
 import os
-from config import EXPOSURE_TOL, MIN_ORDER_SIZE, NEUTRAL_NUM
+from config import MIN_ORDER_SIZE
 
-def initClient():
+def init_client():
     load_dotenv()
 
     client = ClobClient(
@@ -15,47 +15,39 @@ def initClient():
         funder = os.getenv("POLYMARKET_FUNDER"),
     )
 
-    apiCreds = client.create_or_derive_api_creds()
-    client.set_api_creds(apiCreds)
+    api_credentials = client.create_or_derive_api_creds()
+    client.set_api_creds(api_credentials)
 
     return client
 
-async def getTokenBalance(client, token):
+async def get_token_balance(client, token):
     params = BalanceAllowanceParams(
         asset_type = AssetType.CONDITIONAL,
         token_id = token
     )
 
-    tokenBalance = client.get_balance_allowance(params=params)
-    shares = int(tokenBalance.get("balance", 0)) / 1_000_000
+    token_balance = client.get_balance_allowance(params=params)
+    shares = int(token_balance.get("balance", 0)) / 1_000_000
 
     return shares
 
-async def isNeutral(client, tokenPair):
-    yesTokens = await getTokenBalance(client, tokenPair[0])
-    noTokens = await getTokenBalance(client, tokenPair[1])
-    if abs(yesTokens - noTokens) < EXPOSURE_TOL:
-        if abs(NEUTRAL_NUM - noTokens) < EXPOSURE_TOL:
-            return True
-    return False
-
-async def getAccountValue(client):
+async def get_account_value(client):
     params = BalanceAllowanceParams(
         asset_type=AssetType.COLLATERAL
     )
     usdc = client.get_balance_allowance(params=params)
-    cashBalance = int(usdc.get("balance", 0)) / 1_000_000
+    cash_balance = int(usdc.get("balance", 0)) / 1_000_000
 
     user = os.getenv("POLYMARKET_FUNDER")
     data = requests.get("https://data-api.polymarket.com/value", params={"user": user}).json()
-    positionValue = data[0]["value"]
+    position_value = data[0]["value"]
 
-    return cashBalance + positionValue
+    return cash_balance + position_value
 
-async def getOpenOrders(client, market):
+async def get_open_orders(client, market):
     response = client.get_orders(
         OpenOrderParams(
-            market = market["conditionId"]
+            market = market["condition_id"]
         )
     )
     orders = []
@@ -63,14 +55,16 @@ async def getOpenOrders(client, market):
         orders.append(order['id'])
     return orders
 
-async def cancelOrder(client, orderId):
-    response = client.cancel(orderId)
+async def cancel_order(client, order_id):
+    response = client.cancel(order_id)
 
-async def placeOrder(client, token, price, size, side, isExit):
+async def place_order(client, token, price, size, side, is_FOK):
     if size <= MIN_ORDER_SIZE:
         return
 
-    signedOrder = client.create_order(
+    print(f"{side} order for {price} * {size}")
+
+    signed_order = client.create_order(
         OrderArgs(
             token_id = token,
             price = price,
@@ -79,7 +73,8 @@ async def placeOrder(client, token, price, size, side, isExit):
         )
     )
 
-    if isExit:
-        response = client.post_order(signedOrder, OrderType.FOK)
+    return
+    if is_FOK:
+        response = client.post_order(signed_order, OrderType.FOK)
     else:
-        response = client.post_order(signedOrder, OrderType.GTC, post_only=True)
+        response = client.post_order(signed_order, OrderType.GTC, post_only=True)

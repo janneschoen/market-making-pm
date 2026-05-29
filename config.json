@@ -1,20 +1,16 @@
 {
-    "minOrderSize": 5,
     "tradingWindow": [36, 12],
     "numMarkets": 10,
 
-    "neutralShares": 100,
+    "minOrderSize": 5,
     "orderSize": 20,
 
-    "minSpread": 0.014,
-    "maxSpread": 0.03,
-    "beatSpreadBy": 0.005,
+    "spread": 0.04,
     "skewIntensity": 0.01,
 
     "refreshRate": 5,
 
     "exitBuffer": 0.005,
-    "exposureTol": 5,
 
     "locations": [
         "Seoul",

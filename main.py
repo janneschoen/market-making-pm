@@ -1,90 +1,71 @@
-from invMan import initRelayClient, split, merge
-from quotingCycle import doQuotingCycle
-from exitLoop import neutralise
-from marketInfo import getPrice, getOrderBook, getLocationMarkets, getHoursToRes
-from marketAction import initClient, placeOrder, isNeutral
-from config import LOCATIONS, NEUTRAL_NUM, TRADING_WINDOW, NUM_MARKETS
+from inventory_management import neutralise_positions
+from quoting_cycle import do_quoting_cycle
+from market_info import get_locations_markets, get_hours_to_resolution
+from market_action import init_client
+from config import LOCATIONS, TRADING_WINDOW, NUM_MARKETS
 import time, json, asyncio
 
+client = init_client()
 
-client = initClient()
-relayClient = initRelayClient()
+async def handle_market(market):
+    error_heading = f"Error on market: '{market['question']}'"
+    token_pair = market["token_pair"]
 
-async def handleMarket(market):
-    errorHeading = f"Error on market: '{market['question']}'"
-    tokenPair = market["tokenPair"]
-
-    print("Checking if neutral...")
-    try:
-        if await isNeutral(client, tokenPair):
-            print("Already neutral.")
-        else:
-            print("Creating hedged portfolio...")
-            await split(relayClient, market)
-            if not await isNeutral(client, tokenPair):
-                raise ValueError("No neutral portfolio after attempted split")
-    except Exception as e:
-        print(errorHeading)
-        print("Failed splitting:", e)
-        return
+    await neutralise_positions(client, market)
+    
+    print("Neutral.")
 
     print("Starting quoting cycle...")
     try:
-        await doQuotingCycle(client, market)
+        await do_quoting_cycle(client, market)
     except Exception as e:
-        print(errorHeading)
+        print(error_heading)
         print("Failed quoting cycle:", e)
         return
 
-    print("Neutralising portfolio...")
-    try:
-        await neutralise(relayClient, market)
-    except Exception as e:
-        print(errorHeading)
-        print("Failed neutralising:", e)
-        return
+    await neutralise_positions(client, market)
     
     print("Handled market successfully:", market['question'])
     return
 
 
 async def main():
-    allMarkets = []
+    all_markets = []
 
-    dayDelay = 0
+    day_delay = 0
     for location in LOCATIONS:
-        locMarkets = getLocationMarkets(location, dayDelay)
-        hoursToRes = await getHoursToRes(locMarkets[0])
-        while not (TRADING_WINDOW[0] > hoursToRes > TRADING_WINDOW[1]):
-            dayDelay += 1
-            locMarkets = getLocationMarkets(location, dayDelay)
-            hoursToRes = await getHoursToRes(locMarkets[0])
+        markets_of_location = get_locations_markets(location, day_delay)
+        hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
+        while not (TRADING_WINDOW[0] > hours_to_resolution > TRADING_WINDOW[1]):
+            day_delay += 1
+            markets_of_location = get_locations_markets(location, day_delay)
+            hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
         
-        for market in locMarkets:
-            allMarkets.append(market)
+        for market in markets_of_location:
+            all_markets.append(market)
 
-    print(f"Scanned {len(allMarkets)} markets for {len(LOCATIONS)} locations.")
+    print(f"Scanned {len(all_markets)} markets for {len(LOCATIONS)} locations.")
 
-    for market in allMarkets:
-        hoursToRes = await getHoursToRes(market)
-        if not (TRADING_WINDOW[0] > hoursToRes > TRADING_WINDOW[1]):
-            allMarkets.remove(market)
+    for market in all_markets:
+        hours_to_resolution = await get_hours_to_resolution(market)
+        if not (TRADING_WINDOW[0] > hours_to_resolution > TRADING_WINDOW[1]):
+            all_markets.remove(market)
     
-    print(f"{len(allMarkets)} markets matching filter.")
+    print(f"{len(all_markets)} markets matching filter.")
 
-    sortedMarkets = sorted(allMarkets, key=lambda market: market["volume"] * market["uncertainty"], reverse=True)
+    sorted_markets = sorted(all_markets, key=lambda market: market["volume"] * market["uncertainty"], reverse=True)
 
-    tradingMarkets = sortedMarkets[:NUM_MARKETS]
-    print(f"Retrieved best {len(tradingMarkets)} markets:")
-    for market in tradingMarkets:
-        volF = round(market["volume"], 2)
-        uncF = round(market["uncertainty"], 2)
-        hoursToRes = round(await getHoursToRes(market), 2)
-        print(f"- {market['question']} (vol: {volF}) (unc: {uncF}) (res: {hoursToRes}h)")
+    trading_markets = sorted_markets[:NUM_MARKETS]
+    print(f"Retrieved best {len(trading_markets)} markets:")
+    for market in trading_markets:
+        volume_f = round(market["volume"], 2)
+        uncertainty_f = round(market["uncertainty"], 2)
+        hours_to_resolution = round(await getHoursToRes(market), 2)
+        print(f"- {market['question']} (vol: {volume_f}) (unc: {uncertainty_f}) (res: {hours_to_resolution}h)")
 
     tasks = []
-    for market in tradingMarkets:
-        tasks.append(asyncio.create_task(handleMarket(market)))  
+    for market in trading_markets:
+        tasks.append(asyncio.create_task(handle_market(market)))  
     await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
