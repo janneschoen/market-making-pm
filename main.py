@@ -2,10 +2,8 @@ from inventory_management import neutralise_positions
 from quoting_cycle import do_quoting_cycle
 from market_info import get_locations_markets, get_hours_to_resolution
 from market_action import init_client
-from config import LOCATIONS, TRADING_WINDOW, NUM_MARKETS
-import time, json, asyncio
-
-client = init_client()
+from config import load_config
+import time, json, asyncio, sys
 
 async def handle_market(market):
     error_heading = f"Error on market: '{market['question']}'"
@@ -30,6 +28,12 @@ async def handle_market(market):
 
 
 async def main():
+    if len(sys.argv) > 1:
+        run = load_config(sys.argv[1])
+    else:
+        run = load_config()
+
+    client = init_client()
     all_markets = []
 
     day_delay = 0

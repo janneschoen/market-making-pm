@@ -1,16 +1,16 @@
 {
-    "tradingWindow": [36, 12],
-    "numMarkets": 10,
+    "trading_window": [36, 12],
+    "number_of_markets": 10,
 
-    "minOrderSize": 5,
-    "orderSize": 20,
+    "minimal_order_size": 5,
+    "standard_order_size": 20,
 
     "spread": 0.04,
-    "skewIntensity": 0.01,
+    "skew_intensity": 0.01,
 
-    "refreshRate": 5,
+    "refresh_rate": 5,
 
-    "exitBuffer": 0.005,
+    "exit_buffer": 0.005,
 
     "locations": [
         "Seoul",

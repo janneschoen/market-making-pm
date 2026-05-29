@@ -1,6 +1,5 @@
 from market_action import get_token_balance, place_order, get_open_orders
 from market_info import get_market_bids
-from config import MIN_ORDER_SIZE, YES, NO
 import asyncio
 
 async def position_is_neutral(client, token_pair):

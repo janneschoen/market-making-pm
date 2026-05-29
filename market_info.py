@@ -1,6 +1,5 @@
 import requests, json
 from datetime import datetime, timezone
-from config import YES, NO
 
 async def get_price(id):
     resp = requests.get(f"https://clob.polymarket.com/price?token_id={id}&side=BUY").json()

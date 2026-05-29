@@ -2,7 +2,6 @@ from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import BalanceAllowanceParams, AssetType, OrderArgs, OrderType, OpenOrderParams
 from dotenv import load_dotenv
 import os
-from config import MIN_ORDER_SIZE
 
 def init_client():
     load_dotenv()
