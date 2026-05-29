@@ -1,5 +1,6 @@
 from market_info import get_hours_to_resolution, get_market_bids
 from market_action import cancel_order, place_order, get_token_balance, get_open_orders
+from config import YES, NO
 import asyncio
 
 async def do_quoting_cycle(run: Config, client, market: Market):

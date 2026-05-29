@@ -2,6 +2,8 @@ import json
 from dataclasses import dataclass
 
 DEFAULT_CONFIG_PATH = "config.json"
+YES = 0
+NO = 1
 
 @dataclass
 class Config:
