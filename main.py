@@ -6,8 +6,7 @@ from config import load_config
 import time, json, asyncio, sys
 
 async def handle_market(market):
-    error_heading = f"Error on market: '{market['question']}'"
-    token_pair = market["token_pair"]
+    error_heading = f"Error on market: '{market.question}'"
 
     await neutralise_positions(client, market)
     
@@ -23,7 +22,7 @@ async def handle_market(market):
 
     await neutralise_positions(client, market)
     
-    print("Handled market successfully:", market['question'])
+    print("Handled market successfully:", market.question)
     return
 
 
@@ -37,10 +36,10 @@ async def main():
     all_markets = []
 
     day_delay = 0
-    for location in LOCATIONS:
+    for location in run.locations:
         markets_of_location = get_locations_markets(location, day_delay)
         hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
-        while not (TRADING_WINDOW[0] > hours_to_resolution > TRADING_WINDOW[1]):
+        while not (run.trading_window[0] > hours_to_resolution > run.trading_window[1]):
             day_delay += 1
             markets_of_location = get_locations_markets(location, day_delay)
             hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
@@ -48,25 +47,28 @@ async def main():
         for market in markets_of_location:
             all_markets.append(market)
 
-    print(f"Scanned {len(all_markets)} markets for {len(LOCATIONS)} locations.")
+    print(f"Scanned {len(all_markets)} markets for {len(run.locations)} locations.")
 
     for market in all_markets:
         hours_to_resolution = await get_hours_to_resolution(market)
-        if not (TRADING_WINDOW[0] > hours_to_resolution > TRADING_WINDOW[1]):
+        if not (run.trading_window[0] > hours_to_resolution > run.trading_window[1]):
             all_markets.remove(market)
     
     print(f"{len(all_markets)} markets matching filter.")
 
-    sorted_markets = sorted(all_markets, key=lambda market: market["volume"] * market["uncertainty"], reverse=True)
+    sorted_markets = sorted(all_markets, key=lambda market: market.trading_volume * market.uncertainty, reverse=True)
 
-    trading_markets = sorted_markets[:NUM_MARKETS]
+    trading_markets = sorted_markets[:run.number_of_markets]
+    
     print(f"Retrieved best {len(trading_markets)} markets:")
     for market in trading_markets:
-        volume_f = round(market["volume"], 2)
-        uncertainty_f = round(market["uncertainty"], 2)
-        hours_to_resolution = round(await getHoursToRes(market), 2)
-        print(f"- {market['question']} (vol: {volume_f}) (unc: {uncertainty_f}) (res: {hours_to_resolution}h)")
-
+        print(
+            f"- {market.question}",
+            f"(vol: {round(market.trading_volume, 2)})",
+            f"(unc: {round(market.uncertainty, 2)})",
+            f"(res: {round(await get_hours_to_resolution(market), 2)}h)"
+        )
+    
     tasks = []
     for market in trading_markets:
         tasks.append(asyncio.create_task(handle_market(market)))  

@@ -26,9 +26,9 @@ async def get_token_balance(client, token):
     )
 
     token_balance = client.get_balance_allowance(params=params)
-    shares = int(token_balance.get("balance", 0)) / 1_000_000
+    tokens_owned = int(token_balance.get("balance", 0)) / 1_000_000
 
-    return shares
+    return tokens_owned
 
 async def get_account_value(client):
     params = BalanceAllowanceParams(
@@ -57,8 +57,8 @@ async def get_open_orders(client, market):
 async def cancel_order(client, order_id):
     response = client.cancel(order_id)
 
-async def place_order(client, token, price, size, side, is_FOK):
-    if size <= MIN_ORDER_SIZE:
+async def place_order(run: Config, client, token: str, price: float, size: int, side: str, is_FOK: bool):
+    if size <= run.minimal_order_size:
         return
 
     print(f"{side} order for {price} * {size}")

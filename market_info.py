@@ -1,4 +1,5 @@
 import requests, json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 async def get_price(id):
@@ -25,6 +26,14 @@ async def get_hours_to_resolution(market):
     hours_to_resolution = (market["resolution"] - now).total_seconds() / 3600
     return hours_to_resolution
 
+@dataclass
+class Market:
+    question: str
+    token_pair: List[str]
+    condition_id: str
+    resolution: str
+    trading_volume: float
+    uncertainty: float
 
 def get_locations_markets(location, day_delay):
     now = datetime.now()
@@ -38,14 +47,14 @@ def get_locations_markets(location, day_delay):
     markets = requests.get(url).json()["markets"]
 
     locations_markets = [
-        {
-            "question": market["question"],
-            "tokenPair": json.loads(market["clobTokenIds"]),
-            "conditionId": market["conditionId"],
-            "resolution": datetime.fromisoformat(market["endDate"]),
-            "volume": float(market["volume"]),
-            "uncertainty": 1.0 - 2 * abs(0.50 - float(json.loads(market["outcomePrices"])[0]))
-        }
+        Market(
+            question = market["question"],
+            token_pair = json.loads(market["clobTokenIds"]),
+            condition_id = market["conditionId"],
+            resolution = datetime.fromisoformat(market["endDate"]),
+            trading_volume = float(market["volume"]),
+            uncertainty = 1.0 - 2 * abs(0.50 - float(json.loads(market["outcomePrices"])[0])),
+        )
         for market in markets
     ]
 
