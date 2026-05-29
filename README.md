@@ -2,18 +2,22 @@
 
 A Python market-making bot for **Polymarket** focused on weather markets.
 
+It gathers all open weather market bets from the locations set in the configuration, calculates which are most suitable for market making by giving each a score (uncertainty (closeness to 50%) * trading volume), and picks the n markets with the highest scores. The bot then market makes on these n markets in parallel using Asyncio.
+
+The market making algorithm quotes around market midpoint with a set spread, and skews quotes by moving the midpoint with the formula `midpoint - inventory * skew_intensiy`, where `skew_intensity` is a constant from the configuration.
+
 
 ## Project Structure
 - `main.py` — Entry point starting threads
-- `quotingCycle.py` — Core logic for generating and updating quotes
-- `marketAction.py` — Market actions running via CLOB client
-- `marketInfo.py` — Fetch public market info
-- `exitLoop.py` — Handling of market exit
-- `invMan.py` — Polymarket Splitting / Merging (DOES NOT WORK YET)
+- `quoting_cycle.py` — Core logic for generating and updating quotes
+- `market_action.py` — Market actions running via CLOB client
+- `market_info.py` — Fetch public market info
+- `inventory_management.py` — Polymarket Splitting / Merging (DOES NOT WORK YET)
 - `config.py` + `config.json` — Bot logic configuration
 
 ## Features
 - Fully configurable via `config.json`
+- Dynamic fetching of different markets + evaluation of each
 - Inventory risk management to limit directional exposure
 - Real-time interaction with Polymarket API
 
