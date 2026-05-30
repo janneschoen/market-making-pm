@@ -1,4 +1,4 @@
-# market-making-pm
+# Market Making on Polymarket
 
 A Python market-making bot for **Polymarket** focused on weather markets.
 
