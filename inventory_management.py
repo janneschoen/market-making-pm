@@ -4,20 +4,20 @@ from config import YES, NO
 import asyncio
 
 async def position_is_neutral(client, token_pair):
-    number_of_yes = await get_token_balance(client, token_pair[0])
-    number_of_no = await get_token_balance(client, token_pair[1])
+    number_of_yes = await get_token_balance(client, token_pair[YES])
+    number_of_no = await get_token_balance(client, token_pair[NO])
 
     return (abs(number_of_yes - number_of_no) < MIN_ORDER_SIZE), (number_of_yes, number_of_no)
 
 
-async def neutralise_positions(client, market):
-    token_pair = market["token_pair"]
+async def neutralise_positions(client, market: Market):
+    token_pair = market.token_pair
 
     open_orders = await get_open_orders(client, market)
     for order in open_orders:
         await cancel_order(client, order)
 
-    is_neutral, shares = await position_is_neutral(client, tokenPair)
+    is_neutral, shares = await position_is_neutral(client, token_pair)
 
     while not is_neutral:
         number_of_yes, number_of_no = shares

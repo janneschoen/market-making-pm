@@ -39,6 +39,7 @@ async def main():
     for location in run.locations:
         markets_of_location = get_locations_markets(location, day_delay)
         hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
+    
         while not (run.trading_window[0] > hours_to_resolution > run.trading_window[1]):
             day_delay += 1
             markets_of_location = get_locations_markets(location, day_delay)
@@ -64,9 +65,9 @@ async def main():
     for market in trading_markets:
         print(
             f"- {market.question}",
-            f"(vol: {round(market.trading_volume, 2)})",
-            f"(unc: {round(market.uncertainty, 2)})",
-            f"(res: {round(await get_hours_to_resolution(market), 2)}h)"
+            f"(vol.: {round(market.trading_volume, 2)})",
+            f"(unc.: {round(market.uncertainty, 2)})",
+            f"(res.: {round(await get_hours_to_resolution(market), 2)}h)"
         )
     
     tasks = []
