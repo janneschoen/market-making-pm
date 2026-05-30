@@ -12,7 +12,7 @@ The market making algorithm quotes around market midpoint with a set spread, and
 - `quoting_cycle.py` — Core logic for generating and updating quotes
 - `market_action.py` — Market actions running via CLOB client
 - `market_info.py` — Fetch public market info
-- `inventory_management.py` — Polymarket Splitting / Merging (DOES NOT WORK YET)
+- `inventory_management.py` — Checking for / creating neutral positions
 - `config.py` + `config.json` — Bot logic configuration
 
 ## Features
