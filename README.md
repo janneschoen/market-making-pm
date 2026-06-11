@@ -23,7 +23,7 @@ Polymarket is a prediction market where every binary question mints **two outcom
 
 The critical identity:
 
-$$\text{price(YES)} + \text{price(NO)} = 1$$
+**price(YES) + price(NO) = 1**
 
 This holds because the tokens are complementary payoffs: holding one of each is a guaranteed \$1 at settlement. Polymarket lets you redeem YES+NO pairs for \$1 in a single transaction (splitting/merging), which enforces the no-arbitrage relationship.
 
@@ -33,10 +33,10 @@ A standard market maker quotes a **bid** and an **ask** on a single asset. To se
 
 | Traditional MM | This bot |
 |---|---|
-| Buy YES at $p - s/2$ | **Buy YES** at $p - s/2$ |
-| Sell YES at $p + s/2$ (requires holding YES) | **Buy NO** at $1 - (p + s/2)$ |
+| Buy YES at **p − s/2** | **Buy YES** at **p − s/2** |
+| Sell YES at **p + s/2** (requires holding YES) | **Buy NO** at **1 − (p + s/2)** |
 
-Buying NO at price $q$ is **economically equivalent** to selling YES at $1 - q$. So two BUY orders — one on YES, one on NO — create a complete two-sided market with **zero starting inventory**:
+Buying NO at price **q** is **economically equivalent** to selling YES at **1 − q**. So two BUY orders — one on YES, one on NO — create a complete two-sided market with **zero starting inventory**:
 
 ```
 Buy YES @ $0.48   ≡   bid YES
@@ -91,16 +91,16 @@ Each market goes through three stages:
 
 The bot scans **15 global cities** (configurable) and fetches their daily temperature markets. Each market is then scored by:
 
-$$\text{score} = \text{volume} \times \text{uncertainty}$$
+**score = volume × uncertainty**
 
 Where:
 
 | Factor | Formula | Rationale |
 |---|---|---|
 | **Volume** | Raw USDC volume from Gamma API | Higher volume → tighter spreads, higher fill probability, more PnL opportunity |
-| **Uncertainty** | $1 - 2 \lvert 0.5 - p \rvert$ | Peaks at 1.0 when the market is a 50/50 coin flip (maximum disagreement = maximum trading). Decays linearly to 0 at fully-resolved markets (0% or 100%) |
+| **Uncertainty** | **1 − 2·\|0.5 − p\|** | Peaks at 1.0 when the market is a 50/50 coin flip (maximum disagreement = maximum trading). Decays linearly to 0 at fully-resolved markets (0% or 100%) |
 
-Markets are sorted descending by score and the **top $N$ are selected** (`number_of_markets` in config). The bot also filters by `trading_window` — only markets resolving within `[max_hours, min_hours]` are considered. This avoids quoting on markets that are too far from resolution (low information flow) or too close (resolution risk, wide spreads).
+Markets are sorted descending by score and the **top N are selected** (`number_of_markets` in config). The bot also filters by `trading_window` — only markets resolving within `[max_hours, min_hours]` are considered. This avoids quoting on markets that are too far from resolution (low information flow) or too close (resolution risk, wide spreads).
 
 ---
 
@@ -111,18 +111,18 @@ The core algorithm is **inventory-skewed market making** — a lightweight appro
 ### Per tick
 
 1. **Fetch market state** — best bid for YES and NO from the CLOB order book.
-2. **Imply YES ask** — from the NO bid via $\text{yesAsk} = 1 - \text{noBid}$.
-3. **Compute market mid & spread** — $\text{mid} = (\text{yesBid} + \text{yesAsk}) / 2$.
-4. **Measure inventory** — $\text{exposure} = \text{YES}_\text{held} - \text{NO}_\text{held}$.
+2. **Imply YES ask** — from the NO bid via **yesAsk = 1 − noBid**.
+3. **Compute market mid & spread** — **mid = (yesBid + yesAsk) / 2**.
+4. **Measure inventory** — **exposure = YES_held − NO_held**.
 5. **Skew midpoint**:
 
-$$\text{ownMid} = \text{marketMid} - (\text{exposure} \times \text{skewIntensity})$$
+**ownMid = marketMid − (exposure × skewIntensity)**
 
 6. **Post two BUY orders** (post-only, GTC):
 
-$$\text{quote}_\text{YES} = \text{ownMid} - \frac{\text{spread}}{2}$$
+**quote_YES = ownMid − spread/2**
 
-$$\text{quote}_\text{NO} = 1 - \left(\text{ownMid} + \frac{\text{spread}}{2}\right)$$
+**quote_NO = 1 − (ownMid + spread/2)**
 
 7. **Cancel previous orders** (after posting new ones — no liquidity gap).
 8. **Sleep** `refresh_rate` seconds, repeat.
@@ -142,11 +142,11 @@ The `skew_intensity` parameter controls how aggressively the bot leans against i
 Config: `spread = 0.04`, `skew_intensity = 0.01`.  
 Market mid = 0.52. Bot holds 10 YES and 4 NO (exposure = +6).
 
-$$\text{ownMid} = 0.52 - (6 \times 0.01) = 0.46$$
+**ownMid = 0.52 − (6 × 0.01) = 0.46**
 
-$$\text{quote}_\text{YES} = 0.46 - 0.02 = 0.44$$
+**quote_YES = 0.46 − 0.02 = 0.44**
 
-$$\text{quote}_\text{NO} = 1 - (0.46 + 0.02) = 0.52$$
+**quote_NO = 1 − (0.46 + 0.02) = 0.52**
 
 Without skew the quotes would be YES @ 0.50, NO @ 0.54. The long-YES exposure pushes both quotes down by 6¢, making it cheaper for others to buy from the bot (reducing its YES inventory).
 
@@ -167,7 +167,7 @@ Before and after each quoting cycle, the bot **force-liquidates** any imbalance:
 1. Cancel all open orders.
 2. If YES > NO → sell excess YES at the current market bid (FOK).
 3. If NO > YES → sell excess NO at the current market bid (FOK).
-4. Repeat every 5 seconds until $|\text{YES} - \text{NO}| <$ `minimal_order_size`.
+4. Repeat every 5 seconds until **\|YES − NO\| <** `minimal_order_size`.
 
 This is a **market-order exit** — it accepts slippage in exchange for guaranteed flat exposure. It's intentionally aggressive because the alternative (holding through resolution) is a binary gamble the bot has no edge on.
 
