@@ -10,8 +10,6 @@
 
     "refresh_rate": 5,
 
-    "exit_buffer": 0.005,
-
     "locations": [
         "Seoul",
         "London",

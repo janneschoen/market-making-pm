@@ -7,7 +7,6 @@ Key parameters:
   spread            — half-spread around own-mid (total width = spread)
   skew_intensity    — how aggressively to tilt quotes away from inventory
   refresh_rate      — seconds between quote updates
-  exit_buffer       — (unused) intended for early-exit margin before resolution
 """
 import json
 from dataclasses import dataclass
@@ -27,7 +26,6 @@ class Config:
     standard_order_size: int
     spread: float
     skew_intensity: float
-    exit_buffer: float
     minimal_order_size: int = 5
 
 def load_config(config_path = DEFAULT_CONFIG_PATH):
@@ -44,17 +42,24 @@ def load_config(config_path = DEFAULT_CONFIG_PATH):
     
     run = Config()
 
+    # City names used to discover weather markets via slug
     run.locations = config["locations"]
+    # How many top-scored markets to quote in parallel
     run.number_of_markets = config["number_of_markets"]
+    # [max_hours, min_hours] before resolution — only trade inside this band
     run.trading_window = config["trading_window"]
 
+    # Seconds between quote refresh cycles
     run.refresh_rate = config["refresh_rate"]
 
+    # Orders smaller than this are skipped to avoid dust
     run.minimal_order_size = config["minimal_order_size"]
+    # USDC notional size per quote (both YES and NO sides)
     run.standard_order_size = config["standard_order_size"]
 
+    # Half-spread around own-mid; total quoted spread = spread
     run.spread = config["spread"]
+    # Per-unit-of-exposure shift to own_mid; higher = faster inventory mean-reversion
     run.skew_intensity = config["skew_intensity"]
-    run.exit_buffer = config["exit_buffer"]
 
     return run

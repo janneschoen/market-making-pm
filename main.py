@@ -28,7 +28,7 @@ async def handle_market(run, client, market):
     # over from a previous run / partial fill).
     await neutralise_positions(run, client, market)
     
-    print("Neutral.")
+    print("Pre-cycle neutralisation complete.")
 
     print("Starting quoting cycle...")
     try:
