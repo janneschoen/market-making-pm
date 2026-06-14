@@ -47,7 +47,9 @@ async def neutralise_positions(run: Config, client, market: Market):
 
     is_neutral, shares = await position_is_neutral(run, client, token_pair)
 
-    while not is_neutral:
+    max_attempts = 20  # ~100 s total with 5 s sleep; bail if still not flat
+    attempt = 0
+    while not is_neutral and attempt < max_attempts:
         number_of_yes, number_of_no = shares
 
         market_bids = await get_market_bids(token_pair)
@@ -73,5 +75,6 @@ async def neutralise_positions(run: Config, client, market: Market):
                 is_FOK = True
             )
         
+        attempt += 1
         await asyncio.sleep(5)
         is_neutral, shares = await position_is_neutral(run, client, token_pair)

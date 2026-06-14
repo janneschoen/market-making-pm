@@ -61,15 +61,19 @@ async def main():
     # --- Market discovery ---
     # For each location, fetch weather markets. If today's market is outside
     # the trading window, walk forward day-by-day until we find one inside.
-    day_delay = 0
+    MAX_DAY_DELAY = 30  # safety cap — markets more than 30 days out aren't listed
     for location in run.locations:
+        day_delay = 0
         markets_of_location = get_locations_markets(location, day_delay)
         hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
     
-        while not (run.trading_window[0] > hours_to_resolution > run.trading_window[1]):
+        while day_delay < MAX_DAY_DELAY and not (run.trading_window[0] > hours_to_resolution > run.trading_window[1]):
             day_delay += 1
             markets_of_location = get_locations_markets(location, day_delay)
             hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
+        
+        if day_delay == MAX_DAY_DELAY:
+            continue  # no market for this location in range, skip to next city
         
         for market in markets_of_location:
             all_markets.append(market)
