@@ -1,6 +1,6 @@
 # ROADMAP — From Market Maker to Forecast-Driven Trader
 
-*Status: Phase 0 implemented. Phase 1 in progress — the resolved-contract dataset is harvested and its parity validated; price history and point-in-time forecasts are next. Last updated: 2026-11-07.*
+*Status: Phase 0 implemented. Phase 1 in progress — resolved-contract dataset and market-implied prices are joined; point-in-time ensembles are the remaining input before scoring. Last updated: 2026-11-07.*
 
 This document is the design record for the next phase of this repository. It
 supersedes the "back to live" section of `PLANNING.md`.
@@ -273,18 +273,31 @@ gate every order.
 
 ### Phase 1 — Historical gate (€0, no server)
 
-- [ ] Pull ~12 months of **resolved** weather markets and their price history
+- [x] Pull ~12 months of **resolved** weather markets and their price history
 - [ ] Reconstruct the ensemble forecast available at each decision timestamp
 - [ ] Score `P(bucket)` vs market-implied: Brier, log-loss, reliability
 - [ ] Compute edge **after** spread crossing and fees
 - [ ] **Decision point** — see below
 
-> **Progress (2026-11-07):** resolved-contract dataset harvested
-> (`python -m eval.historical --out logs/history/resolved_events.jsonl`):
-> 4 779 contracts, 15 cities, 2025-01-22 → 2026-11-07, 8 contract families,
-> 0 ambiguous settlements, 1 malformed contract rejected, 7 rows with an
-> unverified station (Taipei CWA) flagged rather than guessed. Price history
-> and point-in-time forecasts are not yet joined to the dataset.
+> **Progress (2026-11-07):**
+>
+> * Resolved-contract dataset (`python -m eval.historical`): 4 779 contracts,
+>   15 cities, 2025-01-22 → 2026-11-07, 8 contract families, 0 ambiguous
+>   settlements, 1 malformed contract rejected, 7 rows with an unverified
+>   station (Taipei CWA) flagged rather than guessed.
+> * Market-implied prices (`python -m eval.prices`): 48 122 YES-token
+>   histories, 0 failed requests. Decision times are anchored to the
+>   station's local midnight (T-24h, T-12h) so none falls after the
+>   settlement day starts. Full bucket coverage: 86.7% at T-12h, 84.1% at
+>   T-24h; median implied bucket sum 1.04–1.06; winning bucket mean price
+>   0.33 (uniform ≈0.11).
+> * **Ensemble source finding (blocking):** the Open-Meteo ensemble API only
+>   serves ~92 days of `past_days` and rejects explicit past `start_date`s;
+>   the `previous-runs` API is deterministic only (no members). A 12-month
+>   point-in-time backtest therefore needs the NOAA GEFS archive on S3
+>   (member GRIB2 files are ~15 MB at 0.5°, so byte-range subsetting via the
+>   `.idx` files is required), or a 92-day Open-Meteo ensemble subset whose
+>   point-in-time status must first be verified.
 
 > **Gate:** if the model does not beat the market-implied probability after
 > costs, stop here and publish the negative result. Live trading cannot create

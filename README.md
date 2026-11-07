@@ -225,7 +225,23 @@ Current run: **4,779 contracts**, 15 cities, 2025-01-22 → 2026-11-07, across
 **8 contract families** (`wunderground|C`, `wunderground|F`, `noaa|C`,
 `noaa|F`, `hko|C`, `metar|C`, `metar|F`, `cwa|C`), 0 ambiguous settlements,
 1 malformed contract rejected and 7 rows with an unverified station flagged
-(Taipei CWA). Price history and point-in-time forecasts are not attached yet.
+(Taipei CWA).
+
+```bash
+python -m eval.prices --out logs/history/market_prices.jsonl
+```
+
+Joins each contract to its YES-token price history at two decision times
+anchored to the station's **local** midnight (T-24h, T-12h) — never after the
+settlement day has started — forward-fills the last quote with a 6 h staleness
+cap, and records missing buckets explicitly. One request per token, cached
+under `logs/cache/prices/`; 48k tokens take ~8 minutes at 16 workers.
+
+Current run: **48,122 token histories**, 0 failed requests, **86.7%** of
+contracts fully quoted at T-12h (**84.1%** at T-24h), median implied bucket
+sum 1.04–1.06 (market overround), and the winning bucket trades at a mean
+price of **0.33** vs ≈0.11 under a uniform bucket prior. Point-in-time
+forecasts are the remaining input before the Brier/log-loss gate.
 
 ---
 
@@ -251,7 +267,8 @@ market-making-pm/
 │   ├── buckets.py             # bucket labels/ranges, rounding, partition checks
 │   └── ensemble.py            # point-in-time GEFS cycle selection
 ├── eval/
-│   └── historical.py          # Phase 1: resolved-contract dataset + parity probe
+│   ├── historical.py          # Phase 1: resolved-contract dataset + parity probe
+│   └── prices.py              # Phase 1: market-implied P(bucket) at decision times
 ├── measure/                   # the part that makes results credible
 │   ├── logs.py                # append-only JSONL event log
 │   ├── attribution.py         # per-trade edge, PnL decomposition

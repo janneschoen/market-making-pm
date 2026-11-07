@@ -141,6 +141,8 @@ def test_dataset_row_carries_ids_and_settlement():
     row = H.dataset_row(event, "Chicago", spec, winner, index)
 
     assert row["date"] == "2025-12-04"
+    assert row["end_date"] == "2025-12-04T12:00:00Z"
+    assert row["created_at"] is None   # fixture carries no creation time
     assert row["winner"] == winner == "29–30°F"
     assert row["spec"]["unit"] == "F"
     assert row["spec"]["signature"].startswith("wunderground|F|2+open")
