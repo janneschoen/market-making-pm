@@ -10,6 +10,8 @@
 
     "refresh_rate": 5,
 
+    "mode": "tui",
+
     "locations": [
         "Seoul",
         "London",
@@ -26,5 +28,13 @@
         "Miami",
         "Beijing",
         "NYC"
-    ]
+    ],
+
+    "simulation": {
+        "enabled": true,
+        "initial_equity": 100.0,
+        "metrics_interval_s": 300,
+        "log_path": "logs/simulation.csv",
+        "equity_snapshot_interval_s": 60
+    }
 }
