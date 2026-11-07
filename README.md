@@ -2,6 +2,8 @@
 
 An automated market-making bot for **[Polymarket](https://polymarket.com)** binary-outcome markets, currently targeting weather markets (e.g. *"Highest temperature in London on June 12?"*). It scans dozens of markets across global cities, scores them, and runs parallel, inventory-skewed quoting cycles on the best opportunities.
 
+> **Roadmap:** the next phase turns this execution stack into a forecast-driven trader — ensemble forecasts → calibrated `P(bucket)` → taker trades when the market is mispriced, with maker quoting added later as an execution optimization. See **[ROADMAP.md](ROADMAP.md)** for the design and sequencing.
+
 ---
 
 ## Table of Contents
