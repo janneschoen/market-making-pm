@@ -1,6 +1,6 @@
 # ROADMAP — From Market Maker to Forecast-Driven Trader
 
-*Status: design agreed, implementation not started. Last updated: 2026-11-07.*
+*Status: Phase 0 implemented (restructure, fixes, measurement skeleton). Phase 1 not started. Last updated: 2026-11-07.*
 
 This document is the design record for the next phase of this repository. It
 supersedes the "back to live" section of `PLANNING.md`.
@@ -234,14 +234,20 @@ Not "nice to have" — each of these leaks money or corrupts results on day one.
 
 ## 9. Sequencing
 
-### Phase 0 — Restructure and fix (no behaviour change)
+### Phase 0 — Restructure and fix (no behaviour change) — **done**
 
-- [ ] Split `engine/` from `strategies/` (mechanical move)
-- [ ] Fix slug month/day rollover and local-vs-UTC clock in `market_info.py`
-- [ ] Cache market discovery
-- [ ] Add `measure/` skeleton and JSONL logging of every quote and fill
-- [ ] Add tests: bucket parity, no-lookahead on ensemble cycle selection
-- [ ] Update README to describe the repo as an engine + strategies
+- [x] Split `engine/` from `strategies/`
+- [x] Fix slug month/day rollover and local-vs-UTC clock (`engine/markets.py`, `engine/clock.py`)
+- [x] Cache market discovery (`DiscoveryCache`, TTL, memory + disk)
+- [x] Add `measure/` skeleton and JSONL logging of every quote and fill
+- [x] Add tests: bucket parity (`forecast/buckets.py`), no-lookahead on ensemble
+      cycle selection (`forecast/ensemble.py`), plus slug/cache/risk/scoring
+- [x] Update README to describe the repo as an engine + strategies
+
+Behaviour changes limited to the documented bug fixes: the `trading_window`
+upper bound is now enforced during quoting, new quotes are verified to have
+rested before the old set is cancelled, and risk limits (disabled by default)
+gate every order.
 
 ### Phase 1 — Historical gate (€0, no server)
 
@@ -277,6 +283,10 @@ Not "nice to have" — each of these leaks money or corrupts results on day one.
 ---
 
 ## 10. Known bugs (fix in Phase 0)
+
+> Fixed in Phase 0: `market_info.py` (now `engine/markets.py`) and
+> `quoting_cycle.py` (now `strategies/inventory_mm.py`) items below. The
+> `forecast.py` items stay open until the model is ported in Phase 1.
 
 `market_info.py`
 

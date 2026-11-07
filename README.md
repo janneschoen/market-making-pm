@@ -1,8 +1,10 @@
 # Market Making on Polymarket
 
-An automated market-making bot for **[Polymarket](https://polymarket.com)** binary-outcome markets, currently targeting weather markets (e.g. *"Highest temperature in London on June 12?"*). It scans dozens of markets across global cities, scores them, and runs parallel, inventory-skewed quoting cycles on the best opportunities.
+An automated trading stack for **[Polymarket](https://polymarket.com)** binary-outcome markets, currently targeting weather markets (e.g. *"Highest temperature in London on June 12?"*). It scans dozens of markets across global cities, scores them, and runs parallel quoting cycles on the best opportunities.
 
-> **Roadmap:** the next phase turns this execution stack into a forecast-driven trader — ensemble forecasts → calibrated `P(bucket)` → taker trades when the market is mispriced, with maker quoting added later as an execution optimization. See **[ROADMAP.md](ROADMAP.md)** for the design and sequencing.
+The repository is organised as an **execution engine** (`engine/`) plus **strategies** (`strategies/`): the engine decides *how* to trade, the strategy decides *what* to trade. Today the only strategy is inventory-skewed market making; the roadmap adds a forecast-driven taker strategy and a measurement layer that makes the PnL attributable.
+
+> **Roadmap:** the next phase turns this execution stack into a forecast-driven trader — ensemble forecasts → calibrated `P(bucket)` → taker trades when the market is mispriced, with maker quoting added later as an execution optimization. See **[ROADMAP.md](ROADMAP.md)** for the design and sequencing. Phase 0 (restructure, bug fixes, measurement skeleton) is implemented.
 
 ---
 
@@ -13,6 +15,7 @@ An automated market-making bot for **[Polymarket](https://polymarket.com)** bina
 - [Market Selection](#market-selection)
 - [Quoting Strategy](#quoting-strategy)
 - [Inventory Risk Management](#inventory-risk-management)
+- [Engine, Strategies, Forecast & Measurement](#engine-strategies-forecast--measurement)
 - [Project Structure](#project-structure)
 - [Setup](#setup)
 - [Configuration Reference](#configuration-reference)
@@ -54,7 +57,7 @@ When both orders fill, you hold 1 YES + 1 NO — a risk-free pair redeemable for
 ```
 ┌──────────┐     ┌─────────────────────┐     ┌──────────────────────┐
 │ config   │────▶│   Market Discovery  │────▶│   Market Scoring &   │
-│ .json    │     │  (market_info.py)   │     │   Selection          │
+│ .json    │     │ (engine/markets.py) │     │   Selection          │
 └──────────┘     │                     │     │  (volume × uncert.)  │
                  │ Fetch weather       │     └──────────┬───────────┘
                  │ markets per city    │                │ top-N
@@ -177,19 +180,65 @@ This is a **market-order exit** — it accepts slippage in exchange for guarante
 
 ---
 
+## Engine, Strategies, Forecast & Measurement
+
+The codebase is split along the one boundary that matters (ROADMAP §3): **alpha and execution are separate layers**.
+
+| Package | Responsibility |
+|---|---|
+| `engine/` | CLOB auth (`client`), order lifecycle (`orders`), cached discovery + books + UTC clock (`markets`), balances/neutralisation (`positions`), hard limits (`risk`) |
+| `strategies/` | Trading decisions. `inventory_mm` is the current spread-capture strategy |
+| `forecast/` | Contract station/bucket parity (`station`, `buckets`) and point-in-time GEFS cycle selection (`ensemble`) — the parity-critical parts that must be correct before any probability is priced |
+| `measure/` | Append-only JSONL event log (`logs`), per-trade attribution, mark-outs, Brier/log-loss/reliability |
+
+### Event log
+
+Every quote, order, fill, neutralisation step and risk rejection is appended to
+`logs/events.jsonl` as one JSON object per line, with a UTC timestamp:
+
+```json
+{"ts":"2026-06-12T03:00:00+00:00","event":"quote","mode":"paper","condition_id":"0x…","yes_bid":0.48,"no_bid":0.50,"market_mid":0.49,"own_mid":0.49,"yes_quote":0.47,"no_quote":0.49,"inventory_yes":0.0,"inventory_no":0.0,"exposure":0.0}
+```
+
+This is the raw evidence behind every later claim about PnL — no dashboards until
+the numbers exist.
+
+### Correctness preconditions
+
+- **Point-in-time forecasts.** `forecast.ensemble.latest_available_cycle(as_of)` returns the latest GEFS cycle whose ~4 h publication lag had elapsed at `as_of`; using `datetime.now().replace(hour=0)` silently looks ahead and invalidates any historical test.
+- **Bucket/station parity.** `forecast.buckets` makes the rounding convention, unit and bucket edges explicit and validates that a contract's buckets partition the outcome space (no gaps, overlaps, or missing tails). `forecast.station.resolve_station` raises rather than substituting a nearby gridpoint.
+- **UTC everywhere.** `engine.clock` is injectable; tests run against a fixed clock.
+
+---
+
 ## Project Structure
 
 ```
 market-making-pm/
-├── main.py                    # Entry point — market discovery, scoring, parallel dispatch
-├── quoting_cycle.py           # Core quoting loop — inventory-skewed two-sided MM
-├── market_action.py           # CLOB client wrapper — auth, balances, orders
-├── market_info.py             # Market data — order-book bids, resolution time, market scraping
-├── inventory_management.py    # Position neutralisation — force-flatten inventory
-├── config.py                  # Config dataclass + loader
-├── config.json                # Trading parameters
-├── requirements.txt           # Python dependencies
-└── README.md
+├── main.py                    # Entry point — discovery, scoring, parallel dispatch
+├── config.py / config.json    # Config dataclass + trading parameters
+│
+├── engine/                    # Reusable execution layer (no price view)
+│   ├── client.py              # CLOB client init / auth
+│   ├── orders.py              # place / cancel / open orders, balances, order verification
+│   ├── markets.py             # cached Gamma discovery, order books, UTC resolution clocks
+│   ├── positions.py           # balances + force-neutralisation
+│   ├── risk.py                # notional / position / daily-loss limits, kill switch
+│   └── clock.py               # injectable UTC clock
+├── strategies/
+│   └── inventory_mm.py        # inventory-skewed two-sided MM
+├── forecast/                  # Phase 0 parity pieces; ensembles arrive in Phase 1
+│   ├── station.py             # contract → resolution station / unit / timezone
+│   ├── buckets.py             # contract buckets, rounding, partition validation
+│   └── ensemble.py            # point-in-time GEFS cycle selection
+├── measure/                   # the part that makes results credible
+│   ├── logs.py                # append-only JSONL event log
+│   ├── attribution.py         # per-trade edge, PnL decomposition
+│   ├── markout.py             # adverse-selection mark-outs (+1m / +5m / +1h)
+│   └── scoring.py             # Brier, log-loss, reliability
+├── simulation/                # paper-trading engine, metrics, TUI
+├── tests/                     # pytest suite (no network)
+└── requirements.txt
 ```
 
 ---
@@ -228,7 +277,20 @@ python main.py
 
 # With a custom config
 python main.py path/to/custom_config.json
+
+# Paper-trading dashboard instead of live
+python main.py --mode tui
 ```
+
+### Tests
+
+```bash
+pytest -q
+```
+
+The suite covers slug rollover, UTC clock handling, discovery caching, bucket
+parity, no-lookahead cycle selection, scoring, risk limits and the quoting
+strategy's order-verification path. It never touches the network.
 
 ---
 
@@ -245,5 +307,10 @@ All parameters live in `config.json`:
 | `spread` | `float` | `0.04` | Total spread width around own-mid. YES bid = ownMid − spread/2, effective ask = ownMid + spread/2. |
 | `skew_intensity` | `float` | `0.01` | Per-unit-inventory midpoint shift. Higher = more aggressive inventory mean-reversion. |
 | `refresh_rate` | `int` | `5` | Seconds between quote updates (cancel + repost). |
-| `exit_buffer` | `float` | `0.005` | *(Reserved — intended for early-exit margin before resolution.)* |
-| `locations` | `[str]` | 15 cities | Cities to scan for weather markets. Markets follow the slug `highest-temperature-in-{city}-on-{month}-{day}-{year}`. |
+| `events_log_path` | `str` | `logs/events.jsonl` | Append-only JSONL event log (quotes, orders, fills, risk blocks). |
+| `cache_dir` | `str` | `logs/cache/gamma` | On-disk Gamma discovery cache. |
+| `discovery_cache_ttl_s` | `float` | `300` | Seconds before a cached market-discovery response expires. |
+| `risk.max_notional` | `float \| null` | `null` | Max USDC committed per UTC day (`null` disables). |
+| `risk.max_position_per_market` | `float \| null` | `null` | Max absolute shares held per market. |
+| `risk.max_daily_loss` | `float \| null` | `null` | Daily loss that latches the kill switch. |
+| `locations` | `[str]` | 15 cities | Cities to scan for weather markets. Markets follow the slug `highest-temperature-in-{city}-on-{month}-{day}-{year}` (UTC date, month/day/year all shifted together). |

@@ -12,6 +12,16 @@
 
     "mode": "tui",
 
+    "events_log_path": "logs/events.jsonl",
+    "cache_dir": "logs/cache/gamma",
+    "discovery_cache_ttl_s": 300,
+
+    "risk": {
+        "max_notional": null,
+        "max_position_per_market": null,
+        "max_daily_loss": null
+    },
+
     "locations": [
         "Seoul",
         "London",
