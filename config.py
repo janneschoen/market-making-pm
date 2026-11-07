@@ -9,7 +9,7 @@ Key parameters:
   refresh_rate      — seconds between quote updates
 """
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 DEFAULT_CONFIG_PATH = "config.json"
@@ -19,14 +19,21 @@ NO = 1
 
 @dataclass
 class Config:
-    locations: List[str]
-    number_of_markets: int
-    trading_window: List[int]
-    refresh_rate: int
-    standard_order_size: int
-    spread: float
-    skew_intensity: float
+    locations: List[str] = field(default_factory=list)
+    number_of_markets: int = 10
+    trading_window: List[int] = field(default_factory=lambda: [36, 12])
+    refresh_rate: int = 5
+    standard_order_size: int = 20
+    spread: float = 0.04
+    skew_intensity: float = 0.01
     minimal_order_size: int = 5
+    # Simulation / paper-trading mode
+    mode: str = "live"
+    simulation_enabled: bool = False
+    simulation_initial_equity: float = 100.0
+    simulation_log_path: str = "logs/simulation.csv"
+    simulation_metrics_interval_s: int = 300
+    simulation_equity_snapshot_interval_s: int = 60
 
 def load_config(config_path = DEFAULT_CONFIG_PATH):
     """
@@ -61,5 +68,14 @@ def load_config(config_path = DEFAULT_CONFIG_PATH):
     run.spread = config["spread"]
     # Per-unit-of-exposure shift to own_mid; higher = faster inventory mean-reversion
     run.skew_intensity = config["skew_intensity"]
+
+    # ── Simulation / paper-trading mode ──
+    run.mode = config.get("mode", "live")
+    sim = config.get("simulation", {})
+    run.simulation_enabled = sim.get("enabled", run.mode != "live")
+    run.simulation_initial_equity = float(sim.get("initial_equity", 100.0))
+    run.simulation_log_path = sim.get("log_path", "logs/simulation.csv")
+    run.simulation_metrics_interval_s = int(sim.get("metrics_interval_s", 300))
+    run.simulation_equity_snapshot_interval_s = int(sim.get("equity_snapshot_interval_s", 60))
 
     return run
