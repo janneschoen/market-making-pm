@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from config import YES, NO
+from measure.logs import get_logger
 
 
 # ── Data structures ──────────────────────────────────────────────────────────
@@ -122,6 +123,11 @@ class SimulationEngine:
         os.makedirs(os.path.dirname(self.log_path) or '.', exist_ok=True)
         self._init_csv()
 
+        # JSONL event logging (measurement layer, ROADMAP §7)
+        self.event_logger = get_logger(
+            getattr(config, 'events_log_path', 'logs/events.jsonl')
+        )
+
         # Track the set of condition IDs we've registered
         self._registered_cids: set = set()
 
@@ -150,6 +156,26 @@ class SimulationEngine:
                 fill.spread,
                 0.0,  # pnl_impact placeholder
             ])
+
+        # Same fill, machine-readable, with the mid needed for mark-outs.
+        market_mid = self.latest_mids.get(fill.market_condition_id)
+        if market_mid is None:
+            token_mid = None
+        else:
+            token_mid = market_mid if fill.token == 'YES' else 1.0 - market_mid
+        self.event_logger.fill(
+            mode='paper',
+            condition_id=fill.market_condition_id,
+            question=fill.market_question,
+            token=fill.token,
+            side=fill.side,
+            price=fill.price,
+            size=fill.size,
+            fees=0.0,
+            mid_at_fill=token_mid,
+            market_spread=fill.spread,
+            hours_to_resolution=fill.hours_to_resolution,
+        )
 
     # ── ID generation ────────────────────────────────────────────────────
 
@@ -333,6 +359,13 @@ class SimulationEngine:
             inv[YES] -= pairs
             inv[NO] -= pairs
             self.realized_pnl += pairs  # $1 per redeemed pair
+            self.event_logger.log(
+                'redeem',
+                mode='paper',
+                condition_id=cid,
+                pairs=pairs,
+                realized_pnl=self.realized_pnl,
+            )
 
     # ── PnL & equity ─────────────────────────────────────────────────────
 

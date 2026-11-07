@@ -1,92 +1,101 @@
 """
-Entry point for the Polymarket market-making bot.
+Entry point for the Polymarket bot.
 
 Modes:
   live     — real CLOB trading (default)
-  headless — paper-trading simulation, logs to CSV, prints periodic status
+  headless — paper-trading simulation, logs to CSV/JSONL, periodic status
   tui      — paper-trading simulation with Rich-powered real-time dashboard
 
 Workflow:
-1. Scan configured locations for weather markets within the trading window
+1. Discover weather markets within the trading window (cached Gamma scan)
 2. Score and rank markets by (volume × uncertainty) — a proxy for expected PnL
 3. Run quoting cycles on the top-N markets in parallel via asyncio
 4. (Paper mode) Simulation engine intercepts orders; matches against live bids
+
+The repository is an execution engine (`engine/`) with strategies
+(`strategies/`); this file only does dispatch, discovery and scoring.
 """
-from inventory_management import neutralise_positions
-from quoting_cycle import do_quoting_cycle
-from market_info import get_locations_markets, get_hours_to_resolution
-from market_action import init_client
-from config import load_config, YES, NO
-import time
-import json
+from __future__ import annotations
+
 import asyncio
+import json
 import sys
+import time
+
+from config import load_config
+from engine.client import init_client
+from engine.markets import (
+    Market,
+    configure_discovery_cache,
+    find_markets_in_window,
+)
+from engine.positions import neutralise_positions
+from measure.logs import get_logger
+from strategies.inventory_mm import do_quoting_cycle
+
+MAX_DAY_DELAY = 30
+
 
 # ── Mode dispatch ───────────────────────────────────────────────────────────
 
-async def main():
-    # Parse optional --mode flag and config path from CLI
+def parse_args(argv):
+    """Parse an optional `--mode` flag and an optional config path."""
     cli_mode = None
     config_arg = None
-    i = 1
-    while i < len(sys.argv):
-        if sys.argv[i] == '--mode' and i + 1 < len(sys.argv):
-            cli_mode = sys.argv[i + 1]
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--mode" and i + 1 < len(argv):
+            cli_mode = argv[i + 1]
             i += 2
-        elif sys.argv[i].startswith('--mode='):
-            cli_mode = sys.argv[i].split('=', 1)[1]
+        elif arg.startswith("--mode="):
+            cli_mode = arg.split("=", 1)[1]
             i += 1
-        elif not sys.argv[i].startswith('--'):
-            config_arg = sys.argv[i]
+        elif not arg.startswith("--"):
+            config_arg = arg
             i += 1
         else:
             i += 1
+    return cli_mode, config_arg
 
-    if config_arg:
-        run = load_config(config_arg)
-    else:
-        run = load_config()
+
+async def main():
+    cli_mode, config_arg = parse_args(sys.argv[1:])
+    run = load_config(config_arg) if config_arg else load_config()
 
     if cli_mode:
         run.mode = cli_mode
-        run.simulation_enabled = cli_mode != 'live'
+        run.simulation_enabled = cli_mode != "live"
 
-    valid_modes = ('live', 'headless', 'tui')
+    valid_modes = ("live", "headless", "tui")
     if run.mode not in valid_modes:
         print(f"Unknown mode '{run.mode}'. Valid: {', '.join(valid_modes)}")
         sys.exit(1)
 
     print(f"Mode: {run.mode}")
+    log = get_logger(run.events_log_path)
 
     # ── Discover markets (same for all modes) ──
-    client = init_client() if run.mode == 'live' else None
-    all_markets = []
+    client = init_client() if run.mode == "live" else None
+    cache = configure_discovery_cache(run.cache_dir, run.discovery_cache_ttl_s)
 
-    MAX_DAY_DELAY = 30
+    all_markets: list[Market] = []
     for location in run.locations:
-        day_delay = 0
-        markets_of_location = get_locations_markets(location, day_delay)
-        hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
-
-        while (day_delay < MAX_DAY_DELAY
-               and not (run.trading_window[0] > hours_to_resolution > run.trading_window[1])):
-            day_delay += 1
-            markets_of_location = get_locations_markets(location, day_delay)
-            hours_to_resolution = await get_hours_to_resolution(markets_of_location[0])
-
-        if day_delay == MAX_DAY_DELAY:
+        markets = find_markets_in_window(
+            location, run.trading_window, max_day_delay=MAX_DAY_DELAY,
+            cache=cache,
+        )
+        if not markets:
             continue
-
-        for market in markets_of_location:
-            all_markets.append(market)
+        all_markets.extend(markets)
 
     print(f"Scanned {len(all_markets)} markets for {len(run.locations)} locations.")
 
-    filtered_markets = []
-    for market in all_markets:
-        hours_to_resolution = await get_hours_to_resolution(market)
-        if run.trading_window[0] > hours_to_resolution > run.trading_window[1]:
-            filtered_markets.append(market)
+    max_hours, min_hours = run.trading_window
+    filtered_markets = [
+        market for market in all_markets
+        if max_hours > market.hours_to_resolution() > min_hours
+    ]
     all_markets = filtered_markets
     print(f"{len(all_markets)} markets matching filter.")
 
@@ -103,15 +112,26 @@ async def main():
             f"- {market.question}",
             f"(vol.: {round(market.trading_volume, 2)})",
             f"(unc.: {round(market.uncertainty, 2)})",
-            f"(res.: {round(await get_hours_to_resolution(market), 2)}h)"
+            f"(res.: {round(market.hours_to_resolution(), 2)}h)",
         )
 
+    log.log(
+        "discovery",
+        mode=run.mode,
+        locations=len(run.locations),
+        markets=len(all_markets),
+        selected=len(trading_markets),
+        condition_ids=[m.condition_id for m in trading_markets],
+    )
+    if run.risk_limits.enabled:
+        print(f"Risk limits: {run.risk_limits}")
+
     # ── Route to mode-specific runner ──
-    if run.mode == 'live':
+    if run.mode == "live":
         await run_live(run, client, trading_markets)
-    elif run.mode == 'headless':
+    elif run.mode == "headless":
         await run_headless(run, trading_markets)
-    elif run.mode == 'tui':
+    elif run.mode == "tui":
         await run_tui(run, trading_markets)
 
 
@@ -250,7 +270,7 @@ async def run_tui(run, trading_markets):
 
     # Final summary
     stats = engine.get_stats()
-    print(f"\nSimulation complete.")
+    print("\nSimulation complete.")
     print(f"  Uptime:    {stats['uptime']/3600:.1f}h")
     print(f"  PnL:       ${stats['pnl']:.2f}")
     print(f"  Equity:    ${stats['equity']:.2f}")
