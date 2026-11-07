@@ -206,8 +206,26 @@ the numbers exist.
 ### Correctness preconditions
 
 - **Point-in-time forecasts.** `forecast.ensemble.latest_available_cycle(as_of)` returns the latest GEFS cycle whose ~4 h publication lag had elapsed at `as_of`; using `datetime.now().replace(hour=0)` silently looks ahead and invalidates any historical test.
-- **Bucket/station parity.** `forecast.buckets` makes the rounding convention, unit and bucket edges explicit and validates that a contract's buckets partition the outcome space (no gaps, overlaps, or missing tails). `forecast.station.resolve_station` raises rather than substituting a nearby gridpoint.
+- **Bucket/station parity.** `forecast.buckets` makes the rounding convention, unit and bucket edges explicit and validates that a contract's buckets partition the outcome space (no gaps, overlaps, or missing tails). `forecast.contracts` parses each market's own resolution description into a spec — station, unit, rounding, source family — and `forecast.station.resolve_station` raises rather than substituting a nearby gridpoint.
 - **UTC everywhere.** `engine.clock` is injectable; tests run against a fixed clock.
+
+### Historical dataset (Phase 1)
+
+```bash
+python -m eval.historical --out logs/history/resolved_events.jsonl
+```
+
+Harvests every closed weather contract per city series, parses the contract's
+own resolution description into a spec (station/ICAO, unit, rounding, source
+family), validates the bucket partition, extracts the settled bucket and token
+IDs, and writes one JSONL row per contract. Gamma responses are cached under
+`logs/cache/gamma_events/`, so re-runs are cheap.
+
+Current run: **4,779 contracts**, 15 cities, 2025-01-22 → 2026-11-07, across
+**8 contract families** (`wunderground|C`, `wunderground|F`, `noaa|C`,
+`noaa|F`, `hko|C`, `metar|C`, `metar|F`, `cwa|C`), 0 ambiguous settlements,
+1 malformed contract rejected and 7 rows with an unverified station flagged
+(Taipei CWA). Price history and point-in-time forecasts are not attached yet.
 
 ---
 
@@ -227,10 +245,13 @@ market-making-pm/
 │   └── clock.py               # injectable UTC clock
 ├── strategies/
 │   └── inventory_mm.py        # inventory-skewed two-sided MM
-├── forecast/                  # Phase 0 parity pieces; ensembles arrive in Phase 1
-│   ├── station.py             # contract → resolution station / unit / timezone
-│   ├── buckets.py             # contract buckets, rounding, partition validation
+├── forecast/                  # contract semantics + point-in-time ensembles
+│   ├── contracts.py           # contract → station/unit/rounding/source spec
+│   ├── station.py             # resolution stations (per contract, not per city)
+│   ├── buckets.py             # bucket labels/ranges, rounding, partition checks
 │   └── ensemble.py            # point-in-time GEFS cycle selection
+├── eval/
+│   └── historical.py          # Phase 1: resolved-contract dataset + parity probe
 ├── measure/                   # the part that makes results credible
 │   ├── logs.py                # append-only JSONL event log
 │   ├── attribution.py         # per-trade edge, PnL decomposition

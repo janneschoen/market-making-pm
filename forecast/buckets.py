@@ -67,6 +67,7 @@ _LABEL_RE = re.compile(
     r"^\s*"
     r"(?:(?P<le>[≤<]=?)|(?P<ge>[≥>]=?))?\s*"
     r"(?P<num>[+-]?\d+(?:\.\d+)?)\s*"
+    r"(?:[-–—]\s*(?P<num2>[+-]?\d+(?:\.\d+)?)\s*)?"
     r"°?\s*(?P<unit>[CF])?\s*"
     r"(?:(?:or|and)\s+(?P<dir>below|lower|less|above|higher|more))?"
     r"\s*$",
@@ -124,14 +125,38 @@ class Bucket:
     @classmethod
     def parse(cls, label: str, unit: str = "C",
               rounding: Rounding = Rounding.HALF_UP) -> "Bucket":
-        """Parse a contract outcome label such as `"12°C or below"`."""
+        """
+        Parse a contract outcome label.
+
+        Handles every label family observed on Polymarket weather markets:
+
+            12°C or below | 13°C | 20°C or higher
+            3 °C or below | <51°F | 23 or higher
+            51-52°F | 25–26°F            (two-degree ranges)
+
+        A label without a unit inherits `unit` (the contract's unit).
+        """
         match = _LABEL_RE.match(label)
         if not match:
             raise BucketParityError(f"unparseable bucket label: {label!r}")
 
         value = float(match.group("num"))
+        upper = match.group("num2")
         parsed_unit = (match.group("unit") or unit).upper()
         direction = (match.group("dir") or "").lower()
+        bounded = bool(match.group("le") or match.group("ge") or direction)
+
+        if upper is not None:
+            if bounded:
+                raise BucketParityError(
+                    f"ambiguous bounded range in bucket label: {label!r}"
+                )
+            high = float(upper)
+            if high < value:
+                raise BucketParityError(
+                    f"range is inverted in bucket label: {label!r}"
+                )
+            return cls(label, value, high, parsed_unit, rounding)
 
         if match.group("le") or direction in _LOW_TAIL:
             return cls(label, None, value, parsed_unit, rounding)
@@ -183,8 +208,9 @@ def validate_partition(buckets: Sequence[Bucket]) -> bool:
 
     Requires inclusive integer bounds, one open low tail first, one open high
     tail last, and adjacent buckets to be consecutive (no gaps, no overlaps).
-    Raises `BucketParityError` otherwise — a contract whose buckets fail this
-    check must not be traded.
+    Two-degree range buckets (`51-52°F`) are supported because the next bucket
+    starts at `upper + 1`.  Raises `BucketParityError` otherwise — a contract
+    whose buckets fail this check must not be traded.
     """
     if not buckets:
         raise BucketParityError("no buckets given")

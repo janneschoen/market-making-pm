@@ -1,6 +1,6 @@
 # ROADMAP — From Market Maker to Forecast-Driven Trader
 
-*Status: Phase 0 implemented (restructure, fixes, measurement skeleton). Phase 1 not started. Last updated: 2026-11-07.*
+*Status: Phase 0 implemented. Phase 1 in progress — the resolved-contract dataset is harvested and its parity validated; price history and point-in-time forecasts are next. Last updated: 2026-11-07.*
 
 This document is the design record for the next phase of this repository. It
 supersedes the "back to live" section of `PLANNING.md`.
@@ -129,8 +129,30 @@ For each contract, resolve and store explicitly:
 - the **unit and rounding convention**,
 - the **timezone of the day boundary**.
 
-The current `pm-weather` bucketing (`int(temp + 0.5)`) does not correspond to
-any real contract definition and must be replaced.
+The current `pm-weather` bucketing (`int(temp + 0.5)`) is **not** universally
+wrong: the METAR-era contracts do round to the nearest whole degree with
+half rounded up. It is wrong in the ways that matter — it bins a 0.25°
+gridpoint rather than the station's METAR observation, ignores the station's
+local day boundary, and cannot express the two-degree Fahrenheit range family
+(`25–26°F`) used by the Wunderground/NOAA contracts. Bucketing must therefore
+come from a parsed per-contract spec, not a single formula.
+
+Verified against 4 779 live resolved contracts (Phase 1 dataset, `eval/historical.py`):
+
+| Family (`source\|unit\|width`) | Contracts | Example |
+|---|---|---|
+| `wunderground\|C\|1` | 2 205 | `13°C` |
+| `wunderground\|F\|2` | 1 320 | `25–26°F` |
+| `noaa\|C\|1` | 614 | `13°C` |
+| `hko\|C\|1` | 234 | `13°C` (Hong Kong Observatory) |
+| `noaa\|F\|2` | 183 | `25–26°F` |
+| `metar\|C\|1` | 171 | `13°C`, half-up, station ICAO |
+| `metar\|F\|2` | 45 | `40-41°F`, half-up, station ICAO |
+| `cwa\|C\|1` | 7 | Taipei CWA, no station named |
+
+Stations and units change over time **within a city** (Paris moves LFPG → LFPB;
+Taipei moves RCTP → RCSS; London and NYC are °F in winter 2025 and °C later),
+so a per-city station table is insufficient.
 
 ### Contract
 
@@ -256,6 +278,13 @@ gate every order.
 - [ ] Score `P(bucket)` vs market-implied: Brier, log-loss, reliability
 - [ ] Compute edge **after** spread crossing and fees
 - [ ] **Decision point** — see below
+
+> **Progress (2026-11-07):** resolved-contract dataset harvested
+> (`python -m eval.historical --out logs/history/resolved_events.jsonl`):
+> 4 779 contracts, 15 cities, 2025-01-22 → 2026-11-07, 8 contract families,
+> 0 ambiguous settlements, 1 malformed contract rejected, 7 rows with an
+> unverified station (Taipei CWA) flagged rather than guessed. Price history
+> and point-in-time forecasts are not yet joined to the dataset.
 
 > **Gate:** if the model does not beat the market-implied probability after
 > costs, stop here and publish the negative result. Live trading cannot create

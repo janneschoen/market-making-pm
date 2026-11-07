@@ -7,6 +7,7 @@ from forecast.buckets import (
     Rounding,
     bucket_probabilities,
     buckets_from_labels,
+    convert,
     round_temp,
     validate_partition,
 )
@@ -94,3 +95,49 @@ def test_fahrenheit_buckets_convert_the_observation():
     bucket = Bucket.at_most(50, unit="F")
     assert bucket.contains(10.0)           # 10 °C == 50 °F → 50 ≤ 50
     assert not bucket.contains(10.5)       # 50.9 °F → rounds to 51 → outside
+
+
+# ── Real label families observed on Polymarket ------------------------------
+
+def test_parse_two_degree_fahrenheit_ranges():
+    hyphen = Bucket.parse("51-52°F")
+    assert (hyphen.lower, hyphen.upper, hyphen.unit) == (51, 52, "F")
+
+    en_dash = Bucket.parse("25–26°F")
+    assert (en_dash.lower, en_dash.upper) == (25, 26)
+
+    spaced = Bucket.parse("51 – 52 °F")
+    assert (spaced.lower, spaced.upper) == (51, 52)
+
+
+def test_parse_alternate_label_spellings():
+    assert Bucket.parse("<51°F").upper == 51
+    assert Bucket.parse("3 °C or below").upper == 3
+    assert Bucket.parse("35°F or lower").upper == 35
+    assert Bucket.parse("35°F or above").lower == 35
+    unitless = Bucket.parse("23 or higher", unit="C")
+    assert (unitless.lower, unitless.unit) == (23, "C")
+
+
+def test_two_degree_ranges_partition_cleanly():
+    labels = ["24°F or below", "25–26°F", "27–28°F", "29–30°F",
+              "31–32°F", "33–34°F", "35°F or higher"]
+    buckets = buckets_from_labels(labels, unit="F")
+    # Member temperatures are supplied in °C, as everywhere else.
+    members = [convert(v, "F", "C") for v in (26.0, 30.0, 40.0)]
+    probs = bucket_probabilities(members, buckets, validate=True)
+    assert probs["25–26°F"] == pytest.approx(1 / 3)
+    assert probs["29–30°F"] == pytest.approx(1 / 3)
+    assert probs["35°F or higher"] == pytest.approx(1 / 3)
+    assert sum(probs.values()) == pytest.approx(1.0)
+
+
+def test_range_parity_errors():
+    with pytest.raises(BucketParityError):
+        Bucket.parse("52-51°F")                     # inverted
+    with pytest.raises(BucketParityError):
+        Bucket.parse("51-52°F or below")            # ambiguous bound
+    with pytest.raises(BucketParityError):
+        validate_partition([Bucket.parse("51-52°F"),
+                            Bucket.parse("53-54°F"),
+                            Bucket.parse("55-56°F")])   # missing tails
