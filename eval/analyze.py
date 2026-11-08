@@ -49,12 +49,17 @@ from forecast.gefs import (
     station_key,
 )
 from forecast.station import resolve_icao, resolve_station, resolve_station_name
+from measure.scoring import expected_calibration_error, reliability_bins
 
 DEFAULT_ROWS_PATH = os.path.join("logs", "history", "resolved_events.jsonl")
 DEFAULT_PRICES_PATH = os.path.join("logs", "history", "market_prices.jsonl")
 DEFAULT_REPORT_PATH = os.path.join("logs", "history", "gate_report.json")
 PROBABILITY_FLOOR = 1e-6
 DEFAULT_MIN_TRAIN_SAMPLES = 15
+# Per-share edge thresholds (in probability units, i.e. cents) at which the
+# after-cost taker PnL is reported.
+DEFAULT_EDGE_THRESHOLDS = (0.0, 0.01, 0.02, 0.03)
+DEFAULT_RELIABILITY_BINS = 10
 
 
 # ── Data loading ─────────────────────────────────────────────────────────────
@@ -293,6 +298,191 @@ def edge_summary(model: Sequence[Dict[str, float]],
     }
 
 
+# ── Reliability ─────────────────────────────────────────────────────────────
+
+def flatten_outcomes(probabilities: Sequence[Dict[str, float]],
+                     winners: Sequence[str]) -> Tuple[List[float], List[float]]:
+    """Flatten multi-category forecasts into (probability, outcome) pairs."""
+    ps: List[float] = []
+    outcomes: List[float] = []
+    for probs, winner in zip(probabilities, winners):
+        for label, probability in probs.items():
+            ps.append(probability)
+            outcomes.append(1.0 if label == winner else 0.0)
+    return ps, outcomes
+
+
+def reliability_summary(probabilities: Sequence[Dict[str, float]],
+                        winners: Sequence[str],
+                        n_bins: int = DEFAULT_RELIABILITY_BINS) -> dict:
+    """Reliability diagram + ECE over every (contract, bucket) probability."""
+    ps, outcomes = flatten_outcomes(probabilities, winners)
+    if not ps:
+        return {}
+    bins = reliability_bins(ps, outcomes, n_bins=n_bins)
+    return {
+        "observations": len(ps),
+        "n_bins": n_bins,
+        "ece": expected_calibration_error(ps, outcomes, n_bins=n_bins),
+        "bins": [
+            {
+                "lower": b.lower,
+                "upper": b.upper,
+                "count": b.count,
+                "mean_predicted": b.mean_predicted,
+                "observed_frequency": b.observed_frequency,
+            }
+            for b in bins
+        ],
+    }
+
+
+# ── After-cost taker edge ───────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class CostModel:
+    """Taker costs beyond the quoted history price, per share.
+
+    `prices-history` returns a single traded price per token, not a book, so
+    the ask is approximated as `mid + half_spread`.
+
+    Fees follow Polymarket's published taker schedule
+    (docs.polymarket.com/trading/fees, read 2026-11-08):
+
+        fee_per_share = fee_rate × p × (1 − p)
+
+    with `fee_rate = 0.05` for weather markets and no maker fee.  `fee` is an
+    additional flat per-share cost, kept for sensitivity analysis.  All
+    values are in probability units (0.01 = 1¢).
+    """
+
+    half_spread: float = 0.0
+    fee_rate: float = 0.0
+    fee: float = 0.0
+
+    def fee_at(self, price: float) -> float:
+        """Taker fee per share when buying at `price`."""
+        return self.fee + self.fee_rate * price * (1.0 - price)
+
+    @property
+    def per_share(self) -> float:
+        """Fixed per-share cost; the fee rate is price-dependent."""
+        return self.half_spread + self.fee
+
+
+@dataclass(frozen=True)
+class TakerTrade:
+    """One simulated taker buy of a bucket at the cost-adjusted ask."""
+
+    slug: str
+    city: str
+    label: str
+    model_p: float
+    mid: float
+    price: float
+    fee: float
+    won: bool
+
+    @property
+    def edge(self) -> float:
+        return self.model_p - self.price - self.fee
+
+    @property
+    def pnl(self) -> float:
+        return (1.0 if self.won else 0.0) - self.price - self.fee
+
+
+def taker_trades(samples: Sequence[Sample],
+                 model: Sequence[Dict[str, float]],
+                 costs: CostModel,
+                 threshold: float = 0.0) -> List[TakerTrade]:
+    """Every bucket whose model edge survives spread crossing and fees."""
+    trades: List[TakerTrade] = []
+    for sample, model_probs in zip(samples, model):
+        for label, model_p in model_probs.items():
+            mid = sample.market.get(label)
+            if mid is None:
+                continue
+            price = mid + costs.half_spread
+            fee = costs.fee_at(price)
+            edge = model_p - price - fee
+            if edge <= threshold:
+                continue
+            trades.append(TakerTrade(
+                slug=sample.slug,
+                city=sample.city,
+                label=label,
+                model_p=model_p,
+                mid=mid,
+                price=price,
+                fee=fee,
+                won=label == sample.winner,
+            ))
+    return trades
+
+
+def after_cost_summary(trades: Sequence[TakerTrade]) -> dict:
+    """Aggregate one share per trade: edge, hit rate, PnL and ROI."""
+    if not trades:
+        return {
+            "trades": 0,
+            "contracts": 0,
+            "staked": 0.0,
+            "pnl": 0.0,
+            "roi": 0.0,
+            "mean_edge": 0.0,
+            "mean_price": 0.0,
+            "hit_rate": 0.0,
+        }
+    staked = sum(trade.price + trade.fee for trade in trades)
+    pnl = sum(trade.pnl for trade in trades)
+    winners = sum(1 for trade in trades if trade.won)
+    return {
+        "trades": len(trades),
+        "contracts": len({trade.slug for trade in trades}),
+        "staked": staked,
+        "pnl": pnl,
+        "roi": pnl / staked if staked else 0.0,
+        "mean_edge": sum(trade.edge for trade in trades) / len(trades),
+        "mean_price": sum(trade.price for trade in trades) / len(trades),
+        "hit_rate": winners / len(trades),
+    }
+
+
+def after_cost_report(samples: Sequence[Sample],
+                      model: Sequence[Dict[str, float]],
+                      costs: CostModel,
+                      threshold: float = 0.0,
+                      thresholds: Sequence[float] = DEFAULT_EDGE_THRESHOLDS,
+                      ) -> dict:
+    """After-cost taker PnL at `threshold`, plus sensitivity and by city."""
+    trades = taker_trades(samples, model, costs, threshold=threshold)
+    summary = after_cost_summary(trades)
+    by_city: Dict[str, List[TakerTrade]] = defaultdict(list)
+    for trade in trades:
+        by_city[trade.city].append(trade)
+    return {
+        "threshold": threshold,
+        "contract_share": (summary["contracts"] / len(samples)
+                           if samples else 0.0),
+        "costs": {
+            "half_spread": costs.half_spread,
+            "fee_rate": costs.fee_rate,
+            "fee": costs.fee,
+            "fixed_per_share": costs.per_share,
+        },
+        "summary": summary,
+        "by_city": {city: after_cost_summary(group)
+                    for city, group in sorted(by_city.items())},
+        "thresholds": [
+            {"threshold": level,
+             "summary": after_cost_summary(
+                 taker_trades(samples, model, costs, threshold=level))}
+            for level in thresholds
+        ],
+    }
+
+
 def model_probabilities(sample: Sample,
                         calibration: Optional[Calibration] = None,
                         kernel_sigma: float = 0.0) -> Dict[str, float]:
@@ -376,7 +566,13 @@ def run_gate(test_rows: Sequence[dict], prices: Dict[str, dict],
              use_gfs: bool = False,
              progress: bool = True,
              min_train_samples: int = DEFAULT_MIN_TRAIN_SAMPLES,
-             kernel_sigma: float = 0.0) -> dict:
+             kernel_sigma: float = 0.0,
+             half_spread: float = 0.0,
+             fee_rate: float = 0.05,
+             fee: float = 0.0,
+             edge_threshold: float = 0.0,
+             edge_thresholds: Sequence[float] = DEFAULT_EDGE_THRESHOLDS,
+             reliability_bins_n: int = DEFAULT_RELIABILITY_BINS) -> dict:
     print("collecting test samples", flush=True)
     test_samples = collect_samples(
         test_rows, prices, offset_hours=offset_hours, members=members,
@@ -384,13 +580,22 @@ def run_gate(test_rows: Sequence[dict], prices: Dict[str, dict],
         use_gfs=use_gfs, progress=progress,
     )
 
+    market = [sample.market for sample in test_samples]
+    winners = [sample.winner for sample in test_samples]
+    variants: Dict[str, List[Dict[str, float]]] = {}
+    if test_samples:
+        variants["raw"] = [
+            model_probabilities(sample, kernel_sigma=kernel_sigma)
+            for sample in test_samples
+        ]
+
     report: dict = {
         "offset_hours": offset_hours,
         "members": len(members),
         "product": product,
         "gfs_centre": use_gfs,
         "decisions": len(test_samples),
-        "score": (score_samples(test_samples, kernel_sigma=kernel_sigma)
+        "score": (skill_score(variants["raw"], market, winners)
                   if test_samples else {}),
     }
 
@@ -414,48 +619,70 @@ def run_gate(test_rows: Sequence[dict], prices: Dict[str, dict],
                 }
                 for station, fit in calibration.items()
             }
-            calibrated_model = [
+            variants["calibrated"] = [
                 model_probabilities(sample,
                                     calibration_for(calibration, sample.station))
                 for sample in test_samples
             ]
-            market = [sample.market for sample in test_samples]
-            winners = [sample.winner for sample in test_samples]
             report["score_calibrated"] = skill_score(
-                calibrated_model, market, winners
+                variants["calibrated"], market, winners
             )
-            report["edge_calibrated"] = edge_summary(calibrated_model, market)
+            report["edge_calibrated"] = edge_summary(variants["calibrated"],
+                                                     market)
 
     if test_samples and use_gfs:
         # Fair intermediate baseline: hourly GFS centre, no fitted bias.
         centre_cal = Calibration(bias=0.0, scale=1.0,
                                  sigma=kernel_sigma or 0.75)
-        centre_model = [
+        variants["gfs_centre"] = [
             apply_calibration(sample.members, sample.gfs_max,
                               sample.spec.buckets, centre_cal)
             for sample in test_samples
         ]
         report["score_gfs_centre"] = skill_score(
-            centre_model,
-            [sample.market for sample in test_samples],
-            [sample.winner for sample in test_samples],
+            variants["gfs_centre"], market, winners
         )
 
     if test_samples:
-        raw_model = [model_probabilities(sample, kernel_sigma=kernel_sigma)
-                     for sample in test_samples]
-        report["edge"] = edge_summary(raw_model,
-                                      [sample.market for sample in test_samples])
+        report["edge"] = edge_summary(variants["raw"], market)
         report["contracts"] = [
             {"slug": sample.slug, "date": sample.day.isoformat(),
              "station": sample.station, "cycle": sample.cycle,
              "gfs_max": sample.gfs_max}
             for sample in test_samples
         ]
+
+        costs = CostModel(half_spread=half_spread, fee_rate=fee_rate, fee=fee)
+        report["costs"] = {
+            "half_spread": costs.half_spread,
+            "fee_rate": costs.fee_rate,
+            "fee": costs.fee,
+            "fixed_per_share": costs.per_share,
+        }
+        report["reliability"] = {
+            name: reliability_summary(probs, winners,
+                                      n_bins=reliability_bins_n)
+            for name, probs in variants.items()
+        }
+        report["reliability"]["market"] = reliability_summary(
+            market, winners, n_bins=reliability_bins_n
+        )
+        report["after_cost"] = {
+            name: after_cost_report(
+                test_samples, probs, costs,
+                threshold=edge_threshold,
+                thresholds=edge_thresholds,
+            )
+            for name, probs in variants.items()
+        }
     return report
 
 
 def print_report(report: dict) -> None:
+    def money(value: float) -> str:
+        # Avoid printing "-0.00" for a trivially small loss.
+        return f"{value:+.2f}" if abs(value) >= 0.005 else "0.00"
+
     def show(label: str, score: dict) -> None:
         if not score:
             return
@@ -485,6 +712,53 @@ def print_report(report: dict) -> None:
                   f"mean|edge|={edge['mean_abs_edge']:.3f} "
                   f"share>2¢={edge['share_edge_gt_threshold']:.1%}")
 
+    reliability = report.get("reliability") or {}
+    if reliability:
+        print("\n  Reliability over all bucket probabilities (lower ECE better):")
+        for name in ("raw", "gfs_centre", "calibrated", "market"):
+            summary = reliability.get(name) or {}
+            if not summary:
+                continue
+            print(f"    {name:<12} ECE={summary['ece']:.4f} "
+                  f"(n={summary['observations']}, "
+                  f"{summary['n_bins']} bins)")
+        for name in ("calibrated", "market"):
+            bins = (reliability.get(name) or {}).get("bins") or []
+            if not bins:
+                continue
+            print(f"    {name} diagram (predicted → observed):")
+            for row in bins:
+                print(f"      [{row['lower']:.1f}, {row['upper']:.1f}) "
+                      f"n={row['count']:>5} "
+                      f"pred={row['mean_predicted']:.3f} "
+                      f"obs={row['observed_frequency']:.3f}")
+
+    after_cost = report.get("after_cost") or {}
+    if after_cost:
+        costs = report.get("costs") or {}
+        print("\n  After-cost taker PnL "
+              f"(half-spread={costs.get('half_spread', 0.0) * 100:.2f}¢, "
+              f"fee={costs.get('fee_rate', 0.0):.3f}·p(1-p) + "
+              f"{costs.get('fee', 0.0) * 100:.2f}¢/share):")
+        for name in ("raw", "gfs_centre", "calibrated"):
+            entry = after_cost.get(name) or {}
+            summary = entry.get("summary") or {}
+            if not summary:
+                continue
+            print(f"    {name:<12} trades={summary['trades']:>5} "
+                  f"({entry.get('contract_share', 0.0):.0%} of contracts) "
+                  f"hit={summary['hit_rate']:.1%} "
+                  f"mean edge={summary['mean_edge'] * 100:+.2f}¢ "
+                  f"PnL={money(summary['pnl'])} "
+                  f"ROI={summary['roi']:+.1%}")
+            levels = ", ".join(
+                f">{row['threshold'] * 100:.0f}¢: "
+                f"{row['summary']['trades']}t/"
+                f"{money(row['summary']['pnl'])}"
+                for row in entry.get("thresholds") or []
+            )
+            print(f"      threshold sensitivity: {levels}")
+
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Phase 1 gate: model vs market.")
@@ -507,12 +781,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         default=DEFAULT_MIN_TRAIN_SAMPLES)
     parser.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR)
     parser.add_argument("--workers", type=int, default=12)
+    parser.add_argument("--half-spread", type=float, default=0.0,
+                        help="cost of crossing the spread, per share in "
+                             "probability units (0.01 = 1¢); the ask is "
+                             "approximated as mid + half_spread")
+    parser.add_argument("--fee-rate", type=float, default=0.05,
+                        help="Polymarket taker fee rate; per-share fee is "
+                             "fee_rate * p * (1-p). 0.05 for weather "
+                             "markets per docs.polymarket.com/trading/fees "
+                             "(read 2026-11-08); set 0 to disable")
+    parser.add_argument("--fee", type=float, default=0.0,
+                        help="extra flat per-share cost in probability "
+                             "units (0.002 = 0.2¢)")
+    parser.add_argument("--edge-threshold", type=float, default=0.0,
+                        help="minimum after-cost edge to take a trade")
+    parser.add_argument("--edge-thresholds", default="0,0.01,0.02,0.03",
+                        help="comma-separated thresholds for the PnL "
+                             "sensitivity table")
+    parser.add_argument("--reliability-bins", type=int,
+                        default=DEFAULT_RELIABILITY_BINS)
     parser.add_argument("--out", default=DEFAULT_REPORT_PATH)
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args(argv)
 
     if bool(args.train_start) != bool(args.train_end):
         parser.error("--train-start and --train-end must be given together")
+    if args.half_spread < 0 or args.fee < 0 or args.fee_rate < 0:
+        parser.error("--half-spread, --fee and --fee-rate must be non-negative")
+    if args.reliability_bins < 1:
+        parser.error("--reliability-bins must be >= 1")
+    try:
+        thresholds = tuple(float(value.strip())
+                           for value in args.edge_thresholds.split(",")
+                           if value.strip())
+    except ValueError:
+        parser.error("--edge-thresholds must be comma-separated numbers")
 
     rows = load_jsonl(args.rows)
     prices = market_prices_by_slug(load_jsonl(args.prices))
@@ -544,6 +847,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         use_gfs=args.gfs_centre,
         min_train_samples=args.min_train_samples,
         kernel_sigma=args.kernel_sigma,
+        half_spread=args.half_spread,
+        fee_rate=args.fee_rate,
+        fee=args.fee,
+        edge_threshold=args.edge_threshold,
+        edge_thresholds=thresholds,
+        reliability_bins_n=args.reliability_bins,
     )
     print_report(report)
     directory = os.path.dirname(args.out)

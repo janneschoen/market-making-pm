@@ -248,7 +248,8 @@ price of **0.33** vs ≈0.11 under a uniform bucket prior.
 python -m eval.analyze --cities London,Paris,Madrid,Munich \
     --start 2026-09-01 --end 2026-09-30 \
     --train-start 2026-08-01 --train-end 2026-08-31 \
-    --gfs-centre --members 16 --workers 24
+    --gfs-centre --members 16 --workers 24 \
+    --half-spread 0.01 --fee-rate 0.05 --edge-threshold 0.02
 ```
 
 Computes point-in-time forecasts from the NOAA GEFS archive
@@ -258,7 +259,24 @@ sampling bias), fits per-station bias/scale/σ on the training window
 (`forecast/calibrate.py`), and scores multi-category Brier / log-loss against
 the market-implied prices at the same decision time.
 
-Current read (train Aug 2026, test Sep 2026, 113 contracts, T-24h, 16 members):
+The report also contains two things the Brier table alone cannot show:
+
+- **Reliability** (`measure/scoring.py`): predicted probability vs observed
+  hit rate in 10 bins, plus ECE, for the raw, GFS-centre, calibrated and
+  market forecasts over every (contract, bucket) probability.
+- **After-cost taker PnL** (`eval/analyze.py`): one simulated one-share buy per
+  bucket whose `model_p − ask − fee` clears the threshold. `prices-history`
+  has no historical book, so the ask is approximated as
+  `mid + half_spread`. Fees use Polymarket's published schedule
+  (`docs.polymarket.com/trading/fees`, read 2026-11-08):
+  `fee_per_share = fee_rate × p × (1−p)`, with `--fee-rate 0.05` for weather
+  markets (makers pay none), plus an optional flat `--fee`. The report gives
+  trades, hit rate, staked, PnL and ROI, a threshold-sensitivity table
+  (`--edge-thresholds`, default `0,0.01,0.02,0.03`) and a per-city breakdown,
+  so the verdict is never a single point estimate on one assumed spread.
+
+Current read (train Aug 2026, test Sep 2026, 113 contracts, T-24h, 16 members,
+no cost model applied — pre-cost Brier):
 
 | Forecast | Brier | BSS vs market | mean P(winner) |
 |---|---|---|---|
@@ -274,17 +292,9 @@ market is still ahead on this sample. Oddly, per-station bias fitted on August
 does not fully transfer to September (Paris and London flip sign), so a longer
 training window is needed before treating this as the final gate verdict.
 
----|---|---|---|
-| Raw 16-member ensemble | 0.0936 | −0.68 | 0.153 |
-| + per-city bias correction | 0.0679 | −0.22 | 0.291 |
-| + kernel σ=0.75 °C | 0.0672 | −0.21 | 0.244 |
-| Market baseline | 0.0558 | — | 0.365 |
-
-Diagnosis: the GEFS 0.25° 3-hourly daily max runs **−1.3 °C median** below the
-settled station value (Madrid −2.4 °C, London −0.5 °C), and the winner falls
-outside the member range 45% of the time. Bias correction recovers most of the
-lost skill, but the market is still ahead on this sample — the honest
-Phase 1 status is “not yet beaten”, not “edge found”.
+The honest Phase 1 status is “not yet beaten”, not “edge found”. A
+6–12-month walk-forward across all 15 cities — not one month and four cities —
+is still the missing piece before the gate can be declared failed or passed.
 
 ---
 
@@ -314,7 +324,7 @@ market-making-pm/
 ├── eval/
 │   ├── historical.py          # Phase 1: resolved-contract dataset + parity probe
 │   ├── prices.py              # Phase 1: market-implied P(bucket) at decision times
-│   └── analyze.py             # Phase 1 gate: model vs market Brier/log-loss
+│   └── analyze.py             # Phase 1 gate: Brier/log-loss/reliability + after-cost PnL
 ├── measure/                   # the part that makes results credible
 │   ├── logs.py                # append-only JSONL event log
 │   ├── attribution.py         # per-trade edge, PnL decomposition

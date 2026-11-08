@@ -1,6 +1,6 @@
 # ROADMAP — From Market Maker to Forecast-Driven Trader
 
-*Status: Phase 0 implemented. Phase 1 in progress — the dataset, market-implied prices and a point-in-time forecast pipeline exist; the first out-of-sample gate read says the market is still ahead. Last updated: 2026-11-07.*
+*Status: Phase 0 implemented. Phase 1 in progress — the dataset, market-implied prices, a point-in-time forecast pipeline, reliability scoring and an after-cost taker simulation exist; the first out-of-sample gate read says the market is still ahead, and the full walk-forward is not yet run. Last updated: 2026-11-08.*
 
 This document is the design record for the next phase of this repository. It
 supersedes the "back to live" section of `PLANNING.md`.
@@ -275,8 +275,8 @@ gate every order.
 
 - [x] Pull ~12 months of **resolved** weather markets and their price history
 - [x] Reconstruct the ensemble forecast available at each decision timestamp
-- [ ] Score `P(bucket)` vs market-implied: Brier, log-loss, reliability
-- [ ] Compute edge **after** spread crossing and fees
+- [x] Score `P(bucket)` vs market-implied: Brier, log-loss, reliability
+- [x] Compute edge **after** spread crossing and fees
 - [ ] **Decision point** — see below
 
 > **Progress (2026-11-07):**
@@ -311,6 +311,19 @@ gate every order.
 >   not fully transfer to September, so the honest next requirement is a
 >   6–12-month walk-forward across all 15 cities before declaring the gate
 >   failed or passed.
+>
+> * **Reliability and after-cost scoring** (`python -m eval.analyze`): every
+>   gate run now reports ECE plus 10-bin reliability diagrams for the raw,
+>   GFS-centre, calibrated and market forecasts, and a simulated taker PnL
+>   (one share per bucket whose `model_p − ask − fee` clears the threshold)
+>   with a threshold-sensitivity table and per-city breakdown.
+>   `prices-history` exposes no historical book, so the ask is approximated
+>   as `mid + half_spread`; fees use the verified Polymarket taker schedule
+>   (weather: `fee_rate = 0.05`, `fee = C × rate × p × (1−p)`, makers pay
+>   nothing — `docs.polymarket.com/trading/fees`, read 2026-11-08). Read the
+>   gate as a curve over 0/1/2/3¢ rather than a single spread assumption.
+>   Verified on cached data with a 2-city/2-day smoke run; the full
+>   walk-forward is still outstanding.
 >
 > **Gate:** if the model does not beat the market-implied probability after
 > costs, stop here and publish the negative result. Live trading cannot create
@@ -376,8 +389,11 @@ gate every order.
   not weeks)
 - Shrinkage weight `w` — fit it, don't guess.
 - Taker threshold above fees — fixed or volatility-scaled?
-- Current Polymarket fee schedule and reward program rules — verify before
-  any size decision.
+- ~~Current Polymarket fee schedule and reward program rules — verify before
+  any size decision.~~ Taker fee schedule verified 2026-11-08 against
+  `docs.polymarket.com/trading/fees`: `fee = C × feeRate × p × (1−p)`, weather
+  `feeRate = 0.05`, makers pay nothing and earn a 25% maker rebate. Reward
+  program rules and the taker-rebate tiers still need checking before size.
 - Jurisdiction / ToS for automated trading and reward farming.
 - Does the ensemble's dispersion actually predict the *sign* of its error, or
   only its magnitude? This determines whether 6.2 can be trusted.
