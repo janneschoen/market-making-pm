@@ -240,8 +240,51 @@ under `logs/cache/prices/`; 48k tokens take ~8 minutes at 16 workers.
 Current run: **48,122 token histories**, 0 failed requests, **86.7%** of
 contracts fully quoted at T-12h (**84.1%** at T-24h), median implied bucket
 sum 1.04–1.06 (market overround), and the winning bucket trades at a mean
-price of **0.33** vs ≈0.11 under a uniform bucket prior. Point-in-time
-forecasts are the remaining input before the Brier/log-loss gate.
+price of **0.33** vs ≈0.11 under a uniform bucket prior.
+
+### Gate harness (Phase 1)
+
+```bash
+python -m eval.analyze --cities London,Paris,Madrid,Munich \
+    --start 2026-09-01 --end 2026-09-30 \
+    --train-start 2026-08-01 --train-end 2026-08-31 \
+    --gfs-centre --members 16 --workers 24
+```
+
+Computes point-in-time forecasts from the NOAA GEFS archive
+(`forecast/gefs.py`, `.idx` byte-range subsetting + pygrib), uses the **hourly
+GFS deterministic daily max** as the ensemble centre (removing the 3-hourly
+sampling bias), fits per-station bias/scale/σ on the training window
+(`forecast/calibrate.py`), and scores multi-category Brier / log-loss against
+the market-implied prices at the same decision time.
+
+Current read (train Aug 2026, test Sep 2026, 113 contracts, T-24h, 16 members):
+
+| Forecast | Brier | BSS vs market | mean P(winner) |
+|---|---|---|---|
+| Raw GEFS (3-hourly) | 0.0928 | −0.53 | 0.154 |
+| GFS hourly centre | 0.0780 | −0.29 | 0.185 |
+| + Aug-fitted per-station calibration | 0.0750 | −0.24 | 0.249 |
+| Test-tuned upper bound (diagnostic) | 0.0709 | −0.17 | 0.212 |
+| **Market baseline** | **0.0606** | — | **0.334** |
+
+The hourly centre cuts the daily-max error from −1.37 °C median (GEFS
+3-hourly) to −0.80 °C, and calibration recovers most of the tail loss, but the
+market is still ahead on this sample. Oddly, per-station bias fitted on August
+does not fully transfer to September (Paris and London flip sign), so a longer
+training window is needed before treating this as the final gate verdict.
+
+---|---|---|---|
+| Raw 16-member ensemble | 0.0936 | −0.68 | 0.153 |
+| + per-city bias correction | 0.0679 | −0.22 | 0.291 |
+| + kernel σ=0.75 °C | 0.0672 | −0.21 | 0.244 |
+| Market baseline | 0.0558 | — | 0.365 |
+
+Diagnosis: the GEFS 0.25° 3-hourly daily max runs **−1.3 °C median** below the
+settled station value (Madrid −2.4 °C, London −0.5 °C), and the winner falls
+outside the member range 45% of the time. Bias correction recovers most of the
+lost skill, but the market is still ahead on this sample — the honest
+Phase 1 status is “not yet beaten”, not “edge found”.
 
 ---
 
@@ -265,10 +308,13 @@ market-making-pm/
 │   ├── contracts.py           # contract → station/unit/rounding/source spec
 │   ├── station.py             # resolution stations (per contract, not per city)
 │   ├── buckets.py             # bucket labels/ranges, rounding, partition checks
-│   └── ensemble.py            # point-in-time GEFS cycle selection
+│   ├── ensemble.py            # point-in-time GEFS cycle selection
+│   ├── gefs.py                # NOAA GEFS S3 archive: .idx range fetch, daily maxima
+│   └── calibrate.py           # member maxima → bucket probabilities (Gaussian kernel)
 ├── eval/
 │   ├── historical.py          # Phase 1: resolved-contract dataset + parity probe
-│   └── prices.py              # Phase 1: market-implied P(bucket) at decision times
+│   ├── prices.py              # Phase 1: market-implied P(bucket) at decision times
+│   └── analyze.py             # Phase 1 gate: model vs market Brier/log-loss
 ├── measure/                   # the part that makes results credible
 │   ├── logs.py                # append-only JSONL event log
 │   ├── attribution.py         # per-trade edge, PnL decomposition
